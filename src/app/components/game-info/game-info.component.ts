@@ -12,10 +12,9 @@ const COLOR_NAMES: Record<PlayerColor, string> = {
 };
 
 @Component({
-  selector: 'app-game-info',
-  standalone: true,
-  imports: [NgIf],
-  template: `
+    selector: 'app-game-info',
+    imports: [NgIf],
+    template: `
     <div class="game-info" [class.game-over]="isOver()">
       <div class="gi-round">Round {{ state().round }}</div>
 
@@ -47,7 +46,7 @@ const COLOR_NAMES: Record<PlayerColor, string> = {
       }
     </div>
   `,
-  styles: [`
+    styles: [`
     .game-info {
       background: #f8f9fa;
       border: 1px solid #dee2e6;
@@ -76,7 +75,7 @@ const COLOR_NAMES: Record<PlayerColor, string> = {
       font-weight: 700;
       display: inline-block;
     }
-  `],
+  `]
 })
 export class GameInfoComponent {
   state = input.required<EngineState>();

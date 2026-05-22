@@ -5,7 +5,6 @@ import { GameService, type GameInfo } from '../../services/game/game.service';
 import { RoomService } from '../../services/room/room.service';
 import { AuthService } from '../../services/auth/auth.service';
 import { BoardComponent } from '../../components/board';
-import { TokenComponent } from '../../components/token';
 import { DiceComponent } from '../../components/dice';
 import { MoveSelectorComponent } from '../../components/move-selector';
 import { WaitingRoomComponent } from '../../components/waiting-room';
@@ -19,14 +18,13 @@ import type { SquareInfo, BoardPosition } from '@parchis/shared';
 type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
 
 @Component({
-  selector: 'app-game',
-  standalone: true,
-  imports: [
-    NgIf, NgFor,
-    BoardComponent, TokenComponent, DiceComponent, MoveSelectorComponent,
-    WaitingRoomComponent, PlayerPanelComponent, GameInfoComponent,
-  ],
-  template: `
+    selector: 'app-game',
+    imports: [
+        NgIf, NgFor,
+        BoardComponent, DiceComponent, MoveSelectorComponent,
+        WaitingRoomComponent, PlayerPanelComponent, GameInfoComponent,
+    ],
+    template: `
     <div class="game-page">
 
       @if (view() === 'loading') {
@@ -66,22 +64,12 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
                 [layout]="boardLayout"
                 [validSquares]="validSquares()"
                 [highlightPath]="highlightPath()"
+                [tokens]="myTokens()"
+                [selectedTokenId]="selectedToken()"
+                [validTokenIds]="validTokenIds()"
                 (squareClick)="onSquareClick($event)"
+                (tokenClick)="onTokenSelect($event)"
               />
-
-              <div class="tokens-overlay">
-                <svg [attr.viewBox]="'0 0 600 600'" class="tokens-svg">
-                  @for (token of myTokens(); track token.id) {
-                    <app-token
-                      [token]="token"
-                      [isSelected]="selectedToken() === token.id"
-                      [isValidMove]="validTokenIds().has(token.id)"
-                      [stackIndex]="getStackIndex(token)"
-                      (select)="onTokenSelect($event)"
-                    />
-                  }
-                </svg>
-              </div>
             </div>
 
             <app-dice
@@ -137,7 +125,7 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
       }
     </div>
   `,
-  styles: [`
+    styles: [`
     .game-page {
       min-height: 100vh;
       position: relative;
@@ -210,25 +198,9 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
     }
 
     .board-area {
-      position: relative;
       width: 100%;
-      max-width: 600px;
-    }
-
-    .tokens-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
-    .tokens-overlay .tokens-svg {
-      width: 100%;
-      height: auto;
-    }
-    .tokens-overlay app-token {
-      pointer-events: auto;
+      display: flex;
+      justify-content: center;
     }
 
     .game-sidebar {
@@ -302,7 +274,7 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
       cursor: pointer;
     }
     .go-btn:hover { background: #2980b9; }
-  `],
+  `]
 })
 export class GameComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);

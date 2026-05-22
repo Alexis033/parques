@@ -4,10 +4,9 @@ import type { DiceRoll } from '@parchis/shared';
 import type { ValidAction, ValidMoveCombined, ValidMoveSplit, ValidExitOption, ValidSoplar, ValidSkip } from '@parchis/engine';
 
 @Component({
-  selector: 'app-move-selector',
-  standalone: true,
-  imports: [NgFor, NgIf],
-  template: `
+    selector: 'app-move-selector',
+    imports: [NgFor, NgIf],
+    template: `
     <div class="move-selector">
       <div class="ms-header">
         <h3>Select Move</h3>
@@ -53,7 +52,7 @@ import type { ValidAction, ValidMoveCombined, ValidMoveSplit, ValidExitOption, V
       }
     </div>
   `,
-  styles: [`
+    styles: [`
     .move-selector {
       background: #f8f9fa;
       border: 1px solid #dee2e6;
@@ -163,7 +162,7 @@ import type { ValidAction, ValidMoveCombined, ValidMoveSplit, ValidExitOption, V
       cursor: pointer;
     }
     .btn-cancel:hover { background: #f5f5f5; }
-  `],
+  `]
 })
 export class MoveSelectorComponent {
   validActions = input<ValidAction[]>([]);

@@ -10,10 +10,9 @@ const COLORS_MAP: Record<string, string> = {
 };
 
 @Component({
-  selector: 'app-waiting-room',
-  standalone: true,
-  imports: [NgFor, NgIf],
-  template: `
+    selector: 'app-waiting-room',
+    imports: [NgFor, NgIf],
+    template: `
     <div class="waiting-room">
       <div class="wr-header">
         <h2>Waiting Room</h2>
@@ -86,7 +85,7 @@ const COLORS_MAP: Record<string, string> = {
       </div>
     </div>
   `,
-  styles: [`
+    styles: [`
     .waiting-room {
       max-width: 420px;
       margin: 0 auto;
@@ -216,7 +215,7 @@ const COLORS_MAP: Record<string, string> = {
       font-size: 0.85rem;
     }
     .leave-btn:hover { background: #f5f5f5; }
-  `],
+  `]
 })
 export class WaitingRoomComponent {
   room = input.required<Room>();

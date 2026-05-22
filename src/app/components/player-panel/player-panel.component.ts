@@ -11,10 +11,9 @@ const COLOR_VALUES: Record<PlayerColor, string> = {
 };
 
 @Component({
-  selector: 'app-player-panel',
-  standalone: true,
-  imports: [NgIf],
-  template: `
+    selector: 'app-player-panel',
+    imports: [NgIf],
+    template: `
     <div class="player-panel" [class.active]="isActive()" [class.me]="isMe()">
       <div class="pp-header">
         <span class="pp-color" [style.background]="colorHex()"></span>
@@ -47,7 +46,7 @@ const COLOR_VALUES: Record<PlayerColor, string> = {
       }
     </div>
   `,
-  styles: [`
+    styles: [`
     .player-panel {
       padding: 0.5rem 0.75rem;
       background: #f8f9fa;
@@ -121,7 +120,7 @@ const COLOR_VALUES: Record<PlayerColor, string> = {
       font-style: italic;
       margin-top: 0.25rem;
     }
-  `],
+  `]
 })
 export class PlayerPanelComponent {
   player = input.required<Player>();

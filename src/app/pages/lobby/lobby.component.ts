@@ -9,10 +9,9 @@ import type { Room, HouseRules } from '@parchis/shared';
 import { DEFAULT_HOUSE_RULES } from '@parchis/shared';
 
 @Component({
-  selector: 'app-lobby',
-  standalone: true,
-  imports: [NgIf, NgFor, AsyncPipe, FormsModule],
-  template: `
+    selector: 'app-lobby',
+    imports: [NgIf, NgFor, AsyncPipe, FormsModule],
+    template: `
     <div class="lobby">
       <h2>Lobby</h2>
 
@@ -136,7 +135,7 @@ import { DEFAULT_HOUSE_RULES } from '@parchis/shared';
       }
     </div>
   `,
-  styles: [`
+    styles: [`
     .lobby { padding: 1rem; max-width: 800px; margin: 0 auto; }
     .auth-prompt { display: flex; justify-content: center; padding: 2rem; }
     .auth-card {
@@ -302,7 +301,7 @@ import { DEFAULT_HOUSE_RULES } from '@parchis/shared';
     }
     .join-btn:hover:not(:disabled) { background: #2980b9; }
     .join-btn:disabled { background: #bdc3c7; cursor: not-allowed; }
-  `],
+  `]
 })
 export class LobbyComponent implements OnInit, OnDestroy {
   protected auth = inject(AuthService);

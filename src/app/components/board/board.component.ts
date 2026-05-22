@@ -1,165 +1,106 @@
-import { Component, input, output } from '@angular/core';
-import type { SquareInfo, BoardPosition, PlayerColor } from '@parchis/shared';
-import { BOARD_LAYOUT, CIELO_END, getCoordinates, VIEWBOX_SIZE } from '@parchis/engine';
+import { Component, input, output, computed } from '@angular/core';
+import type { SquareInfo, BoardPosition } from '@parchis/shared';
+import type { PlayerColor } from '@parchis/shared';
+import type { EngineToken } from '@parchis/engine';
+import { COLORS } from '@parchis/shared';
+import { BOARD_LAYOUT } from '@parchis/engine';
+import { BoardCellComponent } from './board-cell.component';
+import { BoardGoalComponent } from './board-goal.component';
+import { PlayerZoneComponent } from './player-zone.component';
+import { getCellGridPosition, ZONE_GRID, GOAL_GRID } from './grid.config';
 
-const PLAYER_COLORS: Record<PlayerColor, string> = {
-  RED: '#e74c3c',
-  BLUE: '#3498db',
-  GREEN: '#2ecc71',
-  YELLOW: '#f1c40f',
-};
+export { getCellGridPosition } from './grid.config';
 
 @Component({
   selector: 'app-board',
   standalone: true,
-  imports: [],
+  imports: [
+    BoardCellComponent,
+    BoardGoalComponent,
+    PlayerZoneComponent,
+  ],
   template: `
-    <svg
-      class="board-svg"
-      [attr.viewBox]="'0 0 ' + VIEWBOX_SIZE + ' ' + VIEWBOX_SIZE"
-    >
-      <!-- SVG original del tablero como fondo -->
-      <image
-        href="tablero.svg"
-        x="0" y="0"
-        [attr.width]="VIEWBOX_SIZE"
-        [attr.height]="VIEWBOX_SIZE"
-        preserveAspectRatio="xMidYMid meet"
-      />
-
-      <!-- Capa interactiva: detección de clicks y estado del juego -->
-      @for (sq of layout(); track sq.id) {
-        <g
-          class="board-square"
-          [class.valid]="isValid(sq.id)"
-          (click)="onSquareClick(sq.id)"
-        >
-          <!-- Hit area transparente -->
-          <circle
-            [attr.cx]="getX(sq.id)"
-            [attr.cy]="getY(sq.id)"
-            r="18"
-            fill="transparent"
-          />
-
-          <!-- Indicador de jugada válida (anillo verde) -->
-          @if (isValid(sq.id)) {
-            <circle
-              [attr.cx]="getX(sq.id)"
-              [attr.cy]="getY(sq.id)"
-              r="20"
-              fill="none"
-              stroke="#2ecc71"
-              stroke-width="4"
-              class="valid-ring"
-            />
-          }
-
-          <!-- Indicador de coronación -->
-          @if (isCoronationSquare(sq.id)) {
-            <circle
-              [attr.cx]="getX(sq.id)"
-              [attr.cy]="getY(sq.id)"
-              r="22"
-              fill="none"
-              stroke="#d4a017"
-              stroke-width="3"
-              stroke-dasharray="6 4"
-              opacity="0.7"
-            />
-          }
-
-          <!-- Número de posición (debug -- ocultar en prod) -->
-          <!--
-          <text
-            [attr.x]="getX(sq.id)"
-            [attr.y]="getY(sq.id) + 4"
-            text-anchor="middle"
-            font-size="10"
-            fill="rgba(0,0,0,0.3)"
-          >{{ sq.id }}</text>
-          -->
-        </g>
+    <div class="tablero">
+      <!-- Player zones -->
+      @for (color of playerColors; track color) {
+        <app-player-zone
+          [color]="color"
+          [style.grid-column]="zoneGrid[color].col"
+          [style.grid-row]="zoneGrid[color].row"
+        />
       }
 
-      <!-- Camino destacado -->
-      @if (highlightPath(); as path) {
-        @for (pos of path; track pos) {
-          <circle
-            [attr.cx]="getX(pos)"
-            [attr.cy]="getY(pos)"
-            r="12"
-            fill="none"
-            stroke="#2ecc71"
-            stroke-width="3"
-            class="path-dot"
+      <!-- Board cells + tokens inside them -->
+      @for (sq of visibleLayout(); track sq.id) {
+        @if (gridPos(sq.id); as pos) {
+          <app-board-cell
+            [sq]="sq"
+            [col]="pos.col"
+            [row]="pos.row"
+            [isValid]="validSquares().has(sq.id) && hasTokens(sq.id)"
+            [tokens]="cellTokens(sq.id)"
+            [selectedTokenId]="selectedTokenId()"
+            [validTokenIds]="validTokenIds()"
+            (tokenClick)="onTokenClick($event)"
+            (click)="onCellClick(sq.id)"
           />
         }
       }
-    </svg>
+
+      <!-- Center goal -->
+      <app-board-goal
+        [style.grid-column]="goalGrid.col"
+        [style.grid-row]="goalGrid.row"
+      />
+    </div>
   `,
   styles: [`
-    .board-svg {
-      width: 100%;
-      max-width: 800px;
-      height: auto;
-      display: block;
+    .tablero {
+      display: grid;
+      grid-template-columns: repeat(8, 30px) repeat(3, 70px) repeat(8, 30px);
+      grid-template-rows: repeat(8, 30px) repeat(3, 70px) repeat(8, 30px);
+      width: 690px;
+      height: 690px;
       margin: 0 auto;
-      cursor: default;
-      user-select: none;
-    }
-    .board-square {
-      cursor: pointer;
-    }
-    .board-square:hover > circle:first-child {
-      fill: rgba(0, 0, 0, 0.08);
-    }
-    .valid-ring {
-      animation: pulse-ring 1.2s ease-in-out infinite;
-      pointer-events: none;
-    }
-    @keyframes pulse-ring {
-      0%, 100% { opacity: 0.4; }
-      50% { opacity: 1; }
-    }
-    .path-dot {
-      animation: pulse 1s ease-in-out infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 0.3; }
-      50% { opacity: 1; }
+      position: relative;
     }
   `],
 })
 export class BoardComponent {
-  protected readonly VIEWBOX_SIZE = VIEWBOX_SIZE;
-  protected readonly PLAYER_COLORS = PLAYER_COLORS;
-
   layout = input<SquareInfo[]>(BOARD_LAYOUT);
   validSquares = input<Set<BoardPosition>>(new Set());
   highlightPath = input<BoardPosition[] | null>(null);
+  tokens = input<EngineToken[]>([]);
+  selectedTokenId = input<string | null>(null);
+  validTokenIds = input<Set<string>>(new Set());
 
   squareClick = output<BoardPosition>();
+  tokenClick = output<string>();
 
-  getX(pos: number): number {
-    return getCoordinates(pos).x;
+  protected readonly playerColors: PlayerColor[] = COLORS;
+  protected readonly zoneGrid = ZONE_GRID;
+  protected readonly goalGrid = GOAL_GRID;
+  protected readonly gridPos = getCellGridPosition;
+
+  protected visibleLayout = computed(() => {
+    return this.layout().filter(sq => getCellGridPosition(sq.id) !== undefined);
+  });
+
+  protected cellTokens(pos: BoardPosition): EngineToken[] {
+    return this.tokens().filter(t => t.position === pos);
   }
 
-  getY(pos: number): number {
-    return getCoordinates(pos).y;
+  protected hasTokens(pos: BoardPosition): boolean {
+    return this.tokens().some(t => t.position === pos);
   }
 
-  isCoronationSquare(pos: number): boolean {
-    return Object.values(CIELO_END).includes(pos);
-  }
-
-  isValid(pos: number): boolean {
-    return this.validSquares().has(pos);
-  }
-
-  onSquareClick(pos: number): void {
-    if (this.isValid(pos)) {
+  protected onCellClick(pos: BoardPosition): void {
+    if (this.validSquares().has(pos) && this.hasTokens(pos)) {
       this.squareClick.emit(pos);
     }
+  }
+
+  protected onTokenClick(tokenId: string): void {
+    this.tokenClick.emit(tokenId);
   }
 }
