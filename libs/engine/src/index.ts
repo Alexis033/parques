@@ -1,0 +1,11 @@
+export { getAdjacentSquares, isSafeZone, getExitPosition, getCieloEntrance, BOARD_LAYOUT, SAFE_ZONES, EXIT_POSITIONS, CIELO_ENTRANCES, CIELO_START, CIELO_END } from './board';
+export { getCoordinates, getSquareAtPoint, VIEWBOX_SIZE } from './coordinates';
+export { Token } from './token';
+export { PlayerTokens } from './player-tokens';
+export { DiceEngine, type DiceEngineOptions } from './dice';
+export { calculateCircuitAdvance, isCapturePosition, getCaptureTargets, validateMove, getMostAdvancedToken, calculatePlayerProgress, getExitableTokens, type MovementResult, type MoveValidation } from './movement';
+export { canExitJail, isLastTokenMode, getValidActions, getMoveActions, getExitActions, getSoplarActions, checkParques, shouldHaveExtraTurn, isGameOver, getCurrentPlayerColor, getPlayerTokens } from './rules';
+export { rollDice, exitToken, moveToken, splitMove, soplar, endTurn, canRoll, canSelectToken, canMove, getNextTurnPhase } from './state-machine';
+export { checkWinner, getRankings, isGameComplete, checkAllCrowned, getLeadingPlayer } from './win-condition';
+export { Game } from './game';
+export type { EngineState, EngineToken, TurnPhase, MissedCapture, GameActionRecord, ValidAction, ValidExitOption, ValidMoveCombined, ValidMoveSplit, ValidSoplar, ValidSkip, PlayerProgress } from './engine-types';
