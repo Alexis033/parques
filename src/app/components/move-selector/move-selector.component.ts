@@ -1,11 +1,10 @@
 import { Component, input, output, computed, signal } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
 import type { DiceRoll } from '@parchis/shared';
 import type { ValidAction, ValidMoveCombined, ValidMoveSplit, ValidExitOption, ValidSoplar, ValidSkip } from '@parchis/engine';
 
 @Component({
     selector: 'app-move-selector',
-    imports: [NgFor, NgIf],
+    imports: [],
     template: `
     <div class="move-selector">
       <div class="ms-header">

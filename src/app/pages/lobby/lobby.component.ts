@@ -1,6 +1,5 @@
 import { Component, OnInit, OnDestroy, signal, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { AsyncPipe, NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../services/auth/auth.service';
 import { RoomService } from '../../services/room/room.service';
@@ -10,7 +9,7 @@ import { DEFAULT_HOUSE_RULES } from '@parchis/shared';
 
 @Component({
     selector: 'app-lobby',
-    imports: [NgIf, NgFor, AsyncPipe, FormsModule],
+    imports: [FormsModule],
     template: `
     <div class="lobby">
       <h2>Lobby</h2>

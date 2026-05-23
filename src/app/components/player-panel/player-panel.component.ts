@@ -1,5 +1,4 @@
 import { Component, input, computed } from '@angular/core';
-import { NgIf } from '@angular/common';
 import type { Player, PlayerColor } from '@parchis/shared';
 import type { EngineToken } from '@parchis/engine';
 
@@ -12,7 +11,7 @@ const COLOR_VALUES: Record<PlayerColor, string> = {
 
 @Component({
     selector: 'app-player-panel',
-    imports: [NgIf],
+    imports: [],
     template: `
     <div class="player-panel" [class.active]="isActive()" [class.me]="isMe()">
       <div class="pp-header">

@@ -1,5 +1,4 @@
 import { Component, input, computed } from '@angular/core';
-import { NgIf } from '@angular/common';
 import type { EngineState } from '@parchis/engine';
 import { isGameOver, getCurrentPlayerColor } from '@parchis/engine';
 import type { PlayerColor } from '@parchis/shared';
@@ -13,7 +12,7 @@ const COLOR_NAMES: Record<PlayerColor, string> = {
 
 @Component({
     selector: 'app-game-info',
-    imports: [NgIf],
+    imports: [],
     template: `
     <div class="game-info" [class.game-over]="isOver()">
       <div class="gi-round">Round {{ state().round }}</div>

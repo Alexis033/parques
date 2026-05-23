@@ -1,5 +1,4 @@
 import { Component, input, output } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
 import type { Room } from '@parchis/shared';
 
 const COLORS_MAP: Record<string, string> = {
@@ -11,7 +10,7 @@ const COLORS_MAP: Record<string, string> = {
 
 @Component({
     selector: 'app-waiting-room',
-    imports: [NgFor, NgIf],
+    imports: [],
     template: `
     <div class="waiting-room">
       <div class="wr-header">

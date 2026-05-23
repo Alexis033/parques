@@ -1,6 +1,5 @@
 import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
 import { GameService, type GameInfo } from '../../services/game/game.service';
 import { RoomService } from '../../services/room/room.service';
 import { AuthService } from '../../services/auth/auth.service';
@@ -20,7 +19,6 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
 @Component({
     selector: 'app-game',
     imports: [
-        NgIf, NgFor,
         BoardComponent, DiceComponent, MoveSelectorComponent,
         WaitingRoomComponent, PlayerPanelComponent, GameInfoComponent,
     ],
