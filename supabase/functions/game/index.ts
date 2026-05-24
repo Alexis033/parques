@@ -3,12 +3,16 @@ import { createClient } from 'npm:@supabase/supabase-js@2.39.0';
 import {
   type EngineState,
   type GameRow,
+  type Player,
   createInitialState,
   handleRoll,
   handleExit,
   handleMove,
   handleEndTurn,
   handleSoplar,
+  handleHeartbeat,
+  handleDisconnect,
+  handleRematch,
 } from './game-handler.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
@@ -53,6 +57,12 @@ async function handleRequest(req: Request): Promise<Response> {
         return await handleGameAction(payload, handleEndTurn);
       case 'soplar':
         return await handleGameAction(payload, (state) => handleSoplar(state, payload.targetTokenId!));
+      case 'heartbeat':
+        return await handleHeartbeatAction(payload);
+      case 'disconnect':
+        return await handleDisconnectAction(payload);
+      case 'rematch':
+        return await handleRematchAction(payload);
       default:
         return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
           status: 400,
@@ -178,6 +188,205 @@ async function broadcastGameState(roomId: string, state: EngineState, version: n
     type: 'broadcast',
     event: 'state_update',
     payload: { state, version },
+  });
+}
+
+async function handleHeartbeatAction(payload: GameActionPayload): Promise<Response> {
+  const { roomId, playerId } = payload;
+  if (!roomId || !playerId) {
+    return new Response(JSON.stringify({ error: 'roomId and playerId required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Fetch the latest game for this room
+  const { data: gameData, error: fetchError } = await supabase
+    .from('games')
+    .select('*')
+    .eq('room_id', roomId)
+    .order('version', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (fetchError || !gameData) {
+    return new Response(JSON.stringify({ error: 'No active game found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const game = gameData as unknown as GameRow;
+  const currentState = game.state;
+
+  // Check all players for heartbeat timeout (60s)
+  let updatedState = structuredClone(currentState);
+  const now = Date.now();
+  let stateChanged = false;
+
+  for (let i = 0; i < updatedState.players.length; i++) {
+    const p = updatedState.players[i];
+    if (p.id === playerId) {
+      // This player is sending heartbeat — mark connected
+      updatedState.players[i] = { ...p, isConnected: true, lastHeartbeat: now };
+      stateChanged = true;
+    } else if (p.isConnected && p.lastHeartbeat && (now - p.lastHeartbeat) > 60000) {
+      // Other player hasn't sent heartbeat in 60s — mark disconnected
+      updatedState.players[i] = { ...p, isConnected: false };
+      stateChanged = true;
+    }
+  }
+
+  if (!stateChanged) {
+    return new Response(JSON.stringify({ ok: true, state: updatedState, version: game.version }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Only increment version if state actually changed
+  const newVersion = game.version + 1;
+  const { error: updateError } = await supabase
+    .from('games')
+    .update({ state: updatedState, version: newVersion })
+    .eq('id', game.id);
+
+  if (updateError) {
+    return new Response(JSON.stringify({ error: 'Failed to update connection state' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  await broadcastGameState(roomId, updatedState, newVersion);
+
+  return new Response(JSON.stringify({ ok: true, state: updatedState, version: newVersion }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+async function handleDisconnectAction(payload: GameActionPayload): Promise<Response> {
+  const { roomId, playerId } = payload;
+  if (!roomId || !playerId) {
+    return new Response(JSON.stringify({ error: 'roomId and playerId required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const { data: gameData, error: fetchError } = await supabase
+    .from('games')
+    .select('*')
+    .eq('room_id', roomId)
+    .order('version', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (fetchError || !gameData) {
+    return new Response(JSON.stringify({ error: 'No active game found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const game = gameData as unknown as GameRow;
+  const currentState = game.state;
+  const updatedState = handleDisconnect(currentState, playerId);
+
+  if (updatedState === currentState) {
+    return new Response(JSON.stringify({ ok: true, state: updatedState, version: game.version }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const newVersion = game.version + 1;
+  const { error: updateError } = await supabase
+    .from('games')
+    .update({ state: updatedState, version: newVersion })
+    .eq('id', game.id);
+
+  if (updateError) {
+    return new Response(JSON.stringify({ error: 'Failed to update connection state' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  await broadcastGameState(roomId, updatedState, newVersion);
+
+  return new Response(JSON.stringify({ ok: true, state: updatedState, version: newVersion }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+async function handleRematchAction(payload: GameActionPayload): Promise<Response> {
+  const { roomId } = payload;
+  if (!roomId) {
+    return new Response(JSON.stringify({ error: 'roomId required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Get the latest game for the room to extract players and house rules
+  const { data: gameData, error: fetchError } = await supabase
+    .from('games')
+    .select('*')
+    .eq('room_id', roomId)
+    .order('version', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (fetchError || !gameData) {
+    return new Response(JSON.stringify({ error: 'No game found for this room' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const game = gameData as unknown as GameRow;
+  const currentState = game.state;
+
+  // Also fetch room data for the latest player list
+  const { data: roomData } = await supabase
+    .from('rooms')
+    .select('*')
+    .eq('id', roomId)
+    .single();
+
+  if (!roomData) {
+    return new Response(JSON.stringify({ error: 'Room not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const newGameId = crypto.randomUUID();
+  const players = roomData.players as Player[];
+  const initialState = createInitialState(newGameId, roomId, players, currentState.houseRules);
+
+  const { error: insertError } = await supabase.from('games').insert({
+    id: newGameId,
+    room_id: roomId,
+    state: initialState,
+    version: 1,
+  });
+
+  if (insertError) {
+    return new Response(JSON.stringify({ error: 'Failed to create rematch' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  await broadcastGameState(roomId, initialState, 1);
+
+  return new Response(JSON.stringify({ gameId: newGameId, state: initialState, version: 1 }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 

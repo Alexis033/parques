@@ -29,6 +29,7 @@ export interface Player {
   name: string;
   isHost: boolean;
   isConnected: boolean;
+  lastHeartbeat?: number;
 }
 
 export interface EngineToken {
@@ -428,4 +429,33 @@ export function handleSoplar(state: EngineState, targetTokenId: string): EngineS
   next.actions.push({ type: 'SOPLAR', playerId: color, timestamp: Date.now(), targetTokenId, reportedBy: color });
   next.turnPhase = 'MOVE';
   return next;
+}
+
+// ---- Connection management ----
+
+export function handleHeartbeat(state: EngineState, playerId: string): EngineState {
+  const idx = state.players.findIndex(p => p.id === playerId);
+  if (idx === -1) return state;
+  const next = structuredClone(state);
+  next.players = next.players.map((p, i) =>
+    i === idx ? { ...p, isConnected: true, lastHeartbeat: Date.now() } : p
+  );
+  return next;
+}
+
+export function handleDisconnect(state: EngineState, playerId: string): EngineState {
+  const idx = state.players.findIndex(p => p.id === playerId);
+  if (idx === -1) return state;
+  const next = structuredClone(state);
+  next.players = next.players.map((p, i) =>
+    i === idx ? { ...p, isConnected: false } : p
+  );
+  return next;
+}
+
+// ---- Rematch ----
+
+export function handleRematch(state: EngineState, houseRules: HouseRules): EngineState {
+  const newGameId = crypto.randomUUID();
+  return createInitialState(newGameId, state.roomId, state.players, houseRules);
 }
