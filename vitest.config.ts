@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['libs/**/*.spec.ts', 'libs/**/*.test.ts'],
+    include: ['libs/**/*.spec.ts', 'libs/**/*.test.ts', 'src/**/*.test.ts', 'supabase/functions/game/**/*.test.ts'],
     exclude: ['node_modules', 'dist'],
   },
   resolve: {
