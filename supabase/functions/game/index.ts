@@ -174,6 +174,11 @@ async function handleGameAction(
     });
   }
 
+  // If game just finished, update room status to COMPLETED
+  if (newState.phase === 'FINISHED' && currentState.phase !== 'FINISHED') {
+    await supabase.from('rooms').update({ status: 'COMPLETED' }).eq('id', game.room_id);
+  }
+
   // Broadcast via real-time
   await broadcastGameState(game.room_id, newState, newVersion);
 
