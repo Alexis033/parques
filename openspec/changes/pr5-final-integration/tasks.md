@@ -24,6 +24,6 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 10 | Messages table + schema | 🔲 Pending | PR5.3 |
-| 11 | Chat component | 🔲 Pending | PR5.3 |
-| 12 | System messages | 🔲 Pending | PR5.3 |
+| 10 | Messages table + schema | ✅ Done | `000003_messages.sql` with RLS |
+| 11 | Chat component | ✅ Done | Full implementation with Realtime subscription, auto-scroll, send |
+| 12 | System messages | ✅ Done | ChatService.sendSystemMessage + winner/game-start integration |
