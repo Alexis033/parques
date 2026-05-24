@@ -12,6 +12,7 @@ import { GameInfoComponent } from '../../components/game-info';
 import type { Room, PlayerColor } from '@parchis/shared';
 import type { EngineState, EngineToken, ValidAction } from '@parchis/engine';
 import { getValidActions, isGameOver, getPlayerTokens, BOARD_LAYOUT } from '@parchis/engine';
+import { calculatePlayerRankings, type PlayerRanking } from '../../services/game/game-utils';
 import type { SquareInfo, BoardPosition } from '@parchis/shared';
 
 type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
@@ -110,12 +111,52 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
         </div>
 
         @if (isGameOverSignal()) {
-          <div class="game-over-modal" (click)="onDismissGameOver()">
-            <div class="game-over-content" (click)="$event.stopPropagation()">
+          <div class="game-over-modal">
+            <div class="game-over-content">
+              <div class="trophy-icon">🏆</div>
               <h2>Game Over!</h2>
               <p class="winner-text">{{ winnerLabel() }} wins!</p>
+
+              <div class="rankings-container">
+                <h3>Player Rankings</h3>
+                @for (ranking of playerRankings(); track ranking.color) {
+                  <div
+                    class="ranking-row"
+                    [class.ranking-winner]="ranking.position === 1"
+                    [class.ranking-disconnected]="!ranking.isConnected"
+                  >
+                    <span class="ranking-medal">
+                      @switch (ranking.position) {
+                        @case (1) { 🥇 }
+                        @case (2) { 🥈 }
+                        @case (3) { 🥉 }
+                        @case (4) { 4th }
+                      }
+                    </span>
+                    <span class="ranking-name">{{ ranking.name }}</span>
+                    <span class="ranking-score">{{ ranking.crownedCount }}/4 👑</span>
+                    @if (!ranking.isConnected) {
+                      <span class="disconnected-badge">Disconnected</span>
+                    }
+                  </div>
+                }
+              </div>
+
               <div class="go-actions">
-                <button routerLink="/lobby" class="go-btn">Back to Lobby</button>
+                <button
+                  (click)="onRematch()"
+                  class="go-btn go-btn-primary"
+                  [disabled]="gameService.loading()"
+                >
+                  @if (gameService.loading()) {
+                    <span class="btn-spinner"></span>
+                  } @else {
+                    🔄 Rematch
+                  }
+                </button>
+                <button (click)="onBackToLobby()" class="go-btn go-btn-secondary">
+                  🚪 Back to Lobby
+                </button>
               </div>
             </div>
           </div>
@@ -238,7 +279,7 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
     .game-over-modal {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.6);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -248,30 +289,132 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     .game-over-content {
       background: white;
-      border-radius: 16px;
+      border-radius: 20px;
       padding: 2rem;
       text-align: center;
-      min-width: 280px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      min-width: 320px;
+      max-width: 400px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
     }
-    .game-over-content h2 { margin: 0 0 0.5rem; }
+    .trophy-icon {
+      font-size: 3rem;
+      margin-bottom: 0.5rem;
+    }
+    .game-over-content h2 {
+      margin: 0 0 0.5rem;
+      font-size: 1.5rem;
+      color: #2c3e50;
+    }
     .winner-text {
-      font-size: 1.2rem;
+      font-size: 1.25rem;
       font-weight: 700;
       color: #d4a017;
       margin: 0 0 1.5rem;
     }
-    .go-actions { display: flex; gap: 0.5rem; justify-content: center; }
-    .go-btn {
-      padding: 0.5rem 1.5rem;
-      border: none;
+
+    .rankings-container {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .rankings-container h3 {
+      margin: 0 0 0.75rem;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #7f8c8d;
+    }
+    .ranking-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 0.75rem;
       border-radius: 8px;
-      background: #3498db;
-      color: white;
+      margin-bottom: 0.25rem;
+    }
+    .ranking-row:last-child {
+      margin-bottom: 0;
+    }
+    .ranking-winner {
+      background: linear-gradient(135deg, #fff9c4 0%, #fff59d 100%);
+      font-weight: 600;
+    }
+    .ranking-disconnected {
+      opacity: 0.5;
+    }
+    .ranking-medal {
+      font-size: 1.25rem;
+      width: 28px;
+      text-align: center;
+    }
+    .ranking-name {
+      flex: 1;
+      text-align: left;
+      color: #2c3e50;
+    }
+    .ranking-score {
+      font-weight: 600;
+      color: #7f8c8d;
+      font-size: 0.9rem;
+    }
+    .disconnected-badge {
+      font-size: 0.7rem;
+      color: #e74c3c;
+      background: #fdf2f2;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+    }
+
+    .go-actions {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+    .go-btn {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 10px;
       font-weight: 600;
       cursor: pointer;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
     }
-    .go-btn:hover { background: #2980b9; }
+    .go-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .go-btn-primary {
+      background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+      color: white;
+    }
+    .go-btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(52, 152, 219, 0.4);
+    }
+    .go-btn-secondary {
+      background: #ecf0f1;
+      color: #555;
+    }
+    .go-btn-secondary:hover {
+      background: #dde4e6;
+    }
+
+    @keyframes spin-btn {
+      to { transform: rotate(360deg); }
+    }
+    .btn-spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin-btn 0.6s linear infinite;
+      display: inline-block;
+    }
   `]
 })
 export class GameComponent implements OnInit, OnDestroy {
@@ -403,6 +546,12 @@ export class GameComponent implements OnInit, OnDestroy {
     return player?.name ?? state.winner;
   });
 
+  protected playerRankings = computed((): PlayerRanking[] => {
+    const state = this.engineStateC();
+    if (!state) return [];
+    return calculatePlayerRankings(state);
+  });
+
   private unsubRoom: (() => void) | null = null;
 
   async ngOnInit(): Promise<void> {
@@ -489,6 +638,32 @@ export class GameComponent implements OnInit, OnDestroy {
     } catch (err) {
       console.error('Kick failed', err);
     }
+  }
+
+  async onRematch(): Promise<void> {
+    if (!this.gameId) return;
+    try {
+      const gameInfo = await this.gameService.rematch(this.gameId);
+      this.onGameReady(gameInfo);
+      // Heartbeat continues (same roomId, already running)
+    } catch (err) {
+      console.error('Rematch failed', err);
+      this.errorMessage.set('Failed to start rematch');
+    }
+  }
+
+  async onBackToLobby(): Promise<void> {
+    if (!this.gameId) return;
+    try {
+      await this.gameService.sendDisconnect(this.gameId);
+      this.gameService.leaveGame();
+      await this.roomService.leaveRoom(this.gameId);
+      this.unsubRoom?.();
+      this.unsubRoom = null;
+    } catch {
+      // Ignore cleanup errors, still navigate
+    }
+    this.router.navigate(['/lobby']);
   }
 
   async onRoll(): Promise<void> {
