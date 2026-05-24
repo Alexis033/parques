@@ -13,7 +13,7 @@ const COLOR_VALUES: Record<PlayerColor, string> = {
     selector: 'app-player-panel',
     imports: [],
     template: `
-    <div class="player-panel" [class.active]="isActive()" [class.me]="isMe()">
+    <div class="player-panel" [class.active]="isActive()" [class.me]="isMe()" [class.disconnected]="!player().isConnected">
       <div class="pp-header">
         <span class="pp-color" [style.background]="colorHex()"></span>
         <span class="pp-name">{{ player().name }}</span>
@@ -60,6 +60,10 @@ const COLOR_VALUES: Record<PlayerColor, string> = {
     }
     .player-panel.me {
       background: #f0f7ff;
+    }
+    .player-panel.disconnected {
+      opacity: 0.5;
+      filter: grayscale(80%);
     }
     .pp-header {
       display: flex;

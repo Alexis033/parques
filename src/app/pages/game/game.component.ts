@@ -404,7 +404,6 @@ export class GameComponent implements OnInit, OnDestroy {
   });
 
   private unsubRoom: (() => void) | null = null;
-  private unsubGame: (() => void) | null = null;
 
   async ngOnInit(): Promise<void> {
     const id = this.route.snapshot.paramMap.get('id');
@@ -440,6 +439,8 @@ export class GameComponent implements OnInit, OnDestroy {
       const existingGame = await this.gameService.findGameByRoomId(roomId);
       if (existingGame) {
         this.onGameReady(existingGame);
+        // Reconnection: start heartbeat for existing game
+        this.gameService.startHeartbeat(roomId);
       } else {
         this.view.set('waiting');
       }
@@ -462,6 +463,8 @@ export class GameComponent implements OnInit, OnDestroy {
       this.view.set('loading');
       const gameInfo = await this.gameService.startGame(this.gameId);
       this.onGameReady(gameInfo);
+      // Start heartbeat for the active game
+      this.gameService.startHeartbeat(this.gameId);
     } catch (err) {
       this.view.set('error');
       this.errorMessage.set('Failed to start game');
@@ -471,6 +474,7 @@ export class GameComponent implements OnInit, OnDestroy {
   async onLeaveRoom(): Promise<void> {
     if (!this.gameId) return;
     try {
+      await this.gameService.sendDisconnect(this.gameId);
       await this.roomService.leaveRoom(this.gameId);
       this.router.navigate(['/lobby']);
     } catch {
@@ -583,6 +587,10 @@ export class GameComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    // Send disconnect signal before cleaning up
+    if (this.gameId) {
+      this.gameService.sendDisconnect(this.gameId);
+    }
     this.unsubRoom?.();
     this.gameService.leaveGame();
   }

@@ -1,9 +1,9 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from '../auth/auth.service';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { EngineState } from '@parchis/engine';
 import type { PlayerColor } from '@parchis/shared';
+import { buildGameChannelName, withRetry } from './game-utils';
 
 export type GameActionType =
   | 'roll-dice'
@@ -48,6 +48,7 @@ export class GameService {
   readonly error = this.errorW.asReadonly();
 
   private gameChannel: ReturnType<SupabaseService['client']['channel']> | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   get currentState(): EngineState | null {
     return this.gameW()?.state ?? null;
@@ -82,7 +83,7 @@ export class GameService {
       );
       const info: GameInfo = { id: result.gameId, roomId, state: result.state, version: result.version };
       this.gameW.set(info);
-      this.subscribeToGame(result.gameId);
+      this.subscribeToRoom(roomId);
       return info;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to start game';
@@ -106,7 +107,7 @@ export class GameService {
       const game = data as unknown as GameRow;
       const info: GameInfo = { id: game.id, roomId: game.room_id, state: game.state, version: game.version };
       this.gameW.set(info);
-      this.subscribeToGame(game.id);
+      this.subscribeToRoom(game.room_id);
       return info;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load game';
@@ -128,7 +129,7 @@ export class GameService {
     const game = data as unknown as GameRow;
     const info: GameInfo = { id: game.id, roomId: game.room_id, state: game.state, version: game.version };
     this.gameW.set(info);
-    this.subscribeToGame(game.id);
+    this.subscribeToRoom(game.room_id);
     return info;
   }
 
@@ -174,11 +175,41 @@ export class GameService {
     return this.dispatchAction('soplar', { targetTokenId });
   }
 
-  subscribeToGame(gameId: string): void {
+  startHeartbeat(roomId: string): void {
+    if (this.heartbeatInterval) return;
+    const playerId = this.auth.userId;
+    if (!playerId) return;
+
+    // Send heartbeat immediately, then every 30s
+    this.callFunction('heartbeat', { roomId, playerId }).catch(() => {});
+    this.heartbeatInterval = setInterval(() => {
+      this.callFunction('heartbeat', { roomId, playerId }).catch(() => {});
+    }, 30000);
+  }
+
+  stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
+  async sendDisconnect(roomId: string): Promise<void> {
+    const playerId = this.auth.userId;
+    if (!playerId || !roomId) return;
+    try {
+      await this.callFunction('disconnect', { roomId, playerId });
+    } catch {
+      // Fire-and-forget — disconnect is best-effort
+    }
+  }
+
+  subscribeToRoom(roomId: string): void {
     this.gameChannel?.unsubscribe();
+    const channelName = buildGameChannelName(roomId);
     // Real-time via broadcast from Edge Function
     this.gameChannel = this.supabase.client
-      .channel(`game:${gameId}`)
+      .channel(channelName)
       .on('broadcast', { event: 'state_update' }, (payload) => {
         const { state, version } = payload as unknown as { state: EngineState; version: number };
         const current = this.gameW();
@@ -187,27 +218,11 @@ export class GameService {
           this.gameW.set({ ...current, state, version });
         }
       })
-      // Also listen for DB changes as fallback
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'games',
-          filter: `id=eq.${gameId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<GameRow>) => {
-          if (!payload.new) return;
-          const row = payload.new as unknown as GameRow;
-          const current = this.gameW();
-          if (current && row.version <= current.version) return;
-          this.gameW.set({ id: row.id, roomId: row.room_id, state: row.state, version: row.version });
-        },
-      )
       .subscribe();
   }
 
   leaveGame(): void {
+    this.stopHeartbeat();
     this.gameChannel?.unsubscribe();
     this.gameChannel = null;
     this.gameW.set(null);
@@ -215,13 +230,22 @@ export class GameService {
   }
 
   private async callFunction<T>(action: string, params: Record<string, unknown>): Promise<T> {
-    const { data, error } = await this.supabase.client.functions.invoke('game', {
-      body: { action, ...params },
-    });
-    if (error) throw new Error(error.message || 'Function call failed');
-    if (data && typeof data === 'object' && 'error' in data) {
-      throw new Error((data as { error: string }).error);
-    }
-    return data as T;
+    return withRetry(async () => {
+      const { data, error } = await this.supabase.client.functions.invoke('game', {
+        body: { action, ...params },
+      });
+      // Check for HTTP-level errors (non-2xx status)
+      if (error) {
+        const errMsg = typeof error === 'object' && 'message' in error
+          ? String(error.message)
+          : 'Function call failed';
+        throw new Error(errMsg);
+      }
+      // Check for application-level errors in response body
+      if (data && typeof data === 'object' && 'error' in data) {
+        throw new Error((data as { error: string }).error);
+      }
+      return data as T;
+    }, { maxAttempts: 5, baseDelayMs: 100 });
   }
 }
