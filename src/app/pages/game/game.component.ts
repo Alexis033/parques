@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, inject, effect } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { GameService, type GameInfo } from '../../services/game/game.service';
 import { RoomService } from '../../services/room/room.service';
@@ -9,6 +9,8 @@ import { MoveSelectorComponent } from '../../components/move-selector';
 import { WaitingRoomComponent } from '../../components/waiting-room';
 import { PlayerPanelComponent } from '../../components/player-panel';
 import { GameInfoComponent } from '../../components/game-info';
+import { ChatComponent } from '../../components/chat';
+import { ChatService } from '../../services/chat/chat.service';
 import type { Room, PlayerColor } from '@parchis/shared';
 import type { EngineState, EngineToken, ValidAction } from '@parchis/engine';
 import { getValidActions, isGameOver, getPlayerTokens, BOARD_LAYOUT } from '@parchis/engine';
@@ -21,7 +23,7 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
     selector: 'app-game',
     imports: [
         BoardComponent, DiceComponent, MoveSelectorComponent,
-        WaitingRoomComponent, PlayerPanelComponent, GameInfoComponent,
+        WaitingRoomComponent, PlayerPanelComponent, GameInfoComponent, ChatComponent,
     ],
     template: `
     <div class="game-page">
@@ -107,6 +109,12 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
                 />
               }
             </div>
+
+            <app-chat
+              [roomId]="gameId!"
+              [currentUserId]="auth.userId"
+              [currentDisplayName]="currentDisplayName()"
+            />
           </div>
         </div>
 
@@ -423,8 +431,9 @@ export class GameComponent implements OnInit, OnDestroy {
   protected gameService = inject(GameService);
   protected roomService = inject(RoomService);
   protected auth = inject(AuthService);
+  private chatService = inject(ChatService);
 
-  private gameId: string | null = null;
+  protected gameId: string | null = null;
 
   // View state
   protected view = signal<ViewState>('loading');
@@ -465,6 +474,13 @@ export class GameComponent implements OnInit, OnDestroy {
   protected isGameOverSignal = computed(() => {
     const state = this.engineStateC();
     return state ? isGameOver(state) : false;
+  });
+
+  protected currentDisplayName = computed(() => {
+    const uid = this.auth.userId;
+    if (!uid) return '';
+    const me = this.players().find(p => p.id === uid);
+    return me?.name ?? '';
   });
 
   protected myTokens = computed(() => {
@@ -554,7 +570,20 @@ export class GameComponent implements OnInit, OnDestroy {
 
   private unsubRoom: (() => void) | null = null;
 
+  /** Tracks whether the winner system message has been sent for the current game. */
+  private winnerMessageSent = false;
+
   async ngOnInit(): Promise<void> {
+    // Watch for winner detection to send system message
+    effect(() => {
+      if (this.isGameOverSignal() && !this.winnerMessageSent) {
+        this.winnerMessageSent = true;
+        const winner = this.winnerLabel();
+        if (winner && this.gameId) {
+          this.chatService.sendSystemMessage(this.gameId, `${winner} won the game!`).catch(() => {});
+        }
+      }
+    });
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) {
       this.router.navigate(['/lobby']);
@@ -614,6 +643,8 @@ export class GameComponent implements OnInit, OnDestroy {
       this.onGameReady(gameInfo);
       // Start heartbeat for the active game
       this.gameService.startHeartbeat(this.gameId);
+      // System message: game started
+      this.chatService.sendSystemMessage(this.gameId, 'Game started!').catch(() => {});
     } catch (err) {
       this.view.set('error');
       this.errorMessage.set('Failed to start game');
