@@ -175,6 +175,31 @@ export class GameService {
     return this.dispatchAction('soplar', { targetTokenId });
   }
 
+  /**
+   * Request a rematch in the same room.
+   * Creates a new game instance with fresh state, same players and room.
+   */
+  async rematch(roomId: string): Promise<GameInfo> {
+    this.loadingW.set(true);
+    this.errorW.set(null);
+    try {
+      const result = await this.callFunction<{ gameId: string; state: EngineState; version: number }>(
+        'rematch', { roomId },
+      );
+      const info: GameInfo = { id: result.gameId, roomId, state: result.state, version: result.version };
+      this.gameW.set(info);
+      // Re-subscribe (will unsubscribe old channel first if any)
+      this.subscribeToRoom(roomId);
+      return info;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create rematch';
+      this.errorW.set(msg);
+      throw err;
+    } finally {
+      this.loadingW.set(false);
+    }
+  }
+
   startHeartbeat(roomId: string): void {
     if (this.heartbeatInterval) return;
     const playerId = this.auth.userId;
