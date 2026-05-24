@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { calculateBackoff, isRetryableError, withRetry, buildGameChannelName } from './game-utils';
+import { calculateBackoff, isRetryableError, withRetry, buildGameChannelName, calculatePlayerRankings, type PlayerRanking } from './game-utils';
+import type { EngineState, EngineToken } from '@parchis/engine';
+import type { PlayerColor, BoardPosition } from '@parchis/shared';
 
 describe('calculateBackoff', () => {
   it('should return base delay for attempt 0', () => {
@@ -120,5 +122,182 @@ describe('buildGameChannelName', () => {
 
   it('should handle roomId with special characters', () => {
     expect(buildGameChannelName('abc-123_def')).toBe('game:abc-123_def');
+  });
+});
+
+// ---------- calculatePlayerRankings ----------
+
+function makeToken(
+  id: string,
+  color: PlayerColor,
+  position: BoardPosition,
+  state: 'JAIL' | 'IN_TRANSIT' | 'IN_SKY' | 'CROWNED',
+  totalSteps = 0,
+  index = 0,
+): EngineToken {
+  return { id, color, index, position, state, totalSteps };
+}
+
+function makeFullSet(color: PlayerColor, baseIndex: number): EngineToken[] {
+  return [
+    makeToken(`${color[0].toLowerCase()}1`, color, -1, 'JAIL', 0, baseIndex),
+    makeToken(`${color[0].toLowerCase()}2`, color, -1, 'JAIL', 0, baseIndex + 1),
+    makeToken(`${color[0].toLowerCase()}3`, color, -1, 'JAIL', 0, baseIndex + 2),
+    makeToken(`${color[0].toLowerCase()}4`, color, -1, 'JAIL', 0, baseIndex + 3),
+  ];
+}
+
+function makeState(overrides: Partial<EngineState> = {}): EngineState {
+  return {
+    id: 'test-game',
+    roomId: 'test-room',
+    phase: 'PLAYING',
+    players: [
+      { id: 'p1', color: 'RED', name: 'Alice', isHost: true, isConnected: true },
+      { id: 'p2', color: 'BLUE', name: 'Bob', isHost: false, isConnected: true },
+      { id: 'p3', color: 'GREEN', name: 'Charlie', isHost: false, isConnected: true },
+      { id: 'p4', color: 'YELLOW', name: 'Diana', isHost: false, isConnected: true },
+    ],
+    tokens: [],
+    currentPlayerIndex: 0,
+    turnOrder: ['RED', 'BLUE', 'GREEN', 'YELLOW'],
+    turnPhase: 'ROLL',
+    round: 1,
+    currentRoll: null,
+    consecutivePairs: 0,
+    extraTurnsRemaining: 0,
+    isLastTokenMode: false,
+    missedCaptures: [],
+    rollAttempts: 0,
+    actions: [],
+    winner: null,
+    houseRules: { soplarCorrespondiente: false, patearSeguroSalida: false, exitRule: 'ALL' },
+    ...overrides,
+  };
+}
+
+describe('calculatePlayerRankings', () => {
+  it('should return winner as position 1 when state.winner is set', () => {
+    const state = makeState({
+      winner: 'BLUE',
+      phase: 'FINISHED',
+      tokens: [
+        ...makeFullSet('RED', 0),
+        ...makeFullSet('BLUE', 4).map((t) => ({ ...t, state: 'CROWNED' as const, position: 83 as BoardPosition })),
+        ...makeFullSet('GREEN', 8),
+        ...makeFullSet('YELLOW', 12),
+      ],
+    });
+
+    const rankings = calculatePlayerRankings(state);
+
+    expect(rankings[0].color).toBe('BLUE');
+    expect(rankings[0].position).toBe(1);
+    expect(rankings[0].name).toBe('Bob');
+    expect(rankings[0].crownedCount).toBe(4);
+  });
+
+  it('should include all players, even with 0 crowned tokens', () => {
+    const state = makeState({
+      winner: 'RED',
+      phase: 'FINISHED',
+      tokens: [
+        ...makeFullSet('RED', 0).map((t) => ({ ...t, state: 'CROWNED' as const, position: 75 as BoardPosition })),
+        ...makeFullSet('BLUE', 4),
+        ...makeFullSet('GREEN', 8),
+        ...makeFullSet('YELLOW', 12),
+      ],
+    });
+
+    const rankings = calculatePlayerRankings(state);
+
+    expect(rankings.length).toBe(4);
+    expect(rankings.map((r) => r.color)).toContain('BLUE');
+    expect(rankings.map((r) => r.color)).toContain('GREEN');
+    expect(rankings.map((r) => r.color)).toContain('YELLOW');
+  });
+
+  it('should preserve isConnected flag from player data', () => {
+    const state = makeState({
+      winner: 'RED',
+      phase: 'FINISHED',
+      players: [
+        { id: 'p1', color: 'RED', name: 'Alice', isHost: true, isConnected: true },
+        { id: 'p2', color: 'BLUE', name: 'Bob', isHost: false, isConnected: false },
+        { id: 'p3', color: 'GREEN', name: 'Charlie', isHost: false, isConnected: true },
+        { id: 'p4', color: 'YELLOW', name: 'Diana', isHost: false, isConnected: false },
+      ],
+      tokens: [
+        ...makeFullSet('RED', 0).map((t) => ({ ...t, state: 'CROWNED' as const, position: 75 as BoardPosition })),
+        ...makeFullSet('BLUE', 4),
+        ...makeFullSet('GREEN', 8),
+        ...makeFullSet('YELLOW', 12),
+      ],
+    });
+
+    const rankings = calculatePlayerRankings(state);
+    const blueRanking = rankings.find((r) => r.color === 'BLUE');
+    const yellowRanking = rankings.find((r) => r.color === 'YELLOW');
+
+    expect(blueRanking?.isConnected).toBe(false);
+    expect(yellowRanking?.isConnected).toBe(false);
+    expect(rankings.find((r) => r.color === 'RED')?.isConnected).toBe(true);
+  });
+
+  it('should order non-winners by crowned count descending', () => {
+    // RED wins (4 crowned), then GREEN (2), then BLUE (1), then YELLOW (0)
+    const state = makeState({
+      winner: 'RED',
+      phase: 'FINISHED',
+      tokens: [
+        // RED: winner - all 4 crowned
+        ...makeFullSet('RED', 0).map((t) => ({ ...t, state: 'CROWNED' as const, position: 75 as BoardPosition })),
+        // BLUE: 1 crowned
+        ...makeFullSet('BLUE', 4).map((t, i) =>
+          i === 0 ? { ...t, state: 'CROWNED' as const, position: 83 as BoardPosition } : t,
+        ),
+        // GREEN: 2 crowned
+        ...makeFullSet('GREEN', 8).map((t, i) =>
+          i < 2 ? { ...t, state: 'CROWNED' as const, position: 91 as BoardPosition } : t,
+        ),
+        // YELLOW: 0
+        ...makeFullSet('YELLOW', 12),
+      ],
+    });
+
+    const rankings = calculatePlayerRankings(state);
+
+    expect(rankings[0].color).toBe('RED');
+    expect(rankings[1].color).toBe('GREEN');
+    expect(rankings[1].crownedCount).toBe(2);
+    expect(rankings[2].color).toBe('BLUE');
+    expect(rankings[2].crownedCount).toBe(1);
+    expect(rankings[3].color).toBe('YELLOW');
+    expect(rankings[3].crownedCount).toBe(0);
+  });
+
+  it('should calculate totalSteps as sum of all tokens totalSteps', () => {
+    const state = makeState({
+      winner: 'RED',
+      phase: 'FINISHED',
+      tokens: [
+        ...makeFullSet('RED', 0).map((t) => ({ ...t, state: 'CROWNED' as const, position: 75 as BoardPosition, totalSteps: 100 })),
+        // BLUE has tokens with different totalSteps
+        ...makeFullSet('BLUE', 4).map((t, i) => ({
+          ...t,
+          position: (i * 10) as BoardPosition,
+          state: i === 0 ? 'CROWNED' as const : 'IN_TRANSIT' as const,
+          totalSteps: (i + 1) * 10,
+        })),
+        ...makeFullSet('GREEN', 8),
+        ...makeFullSet('YELLOW', 12),
+      ],
+    });
+
+    const rankings = calculatePlayerRankings(state);
+    const blue = rankings.find((r) => r.color === 'BLUE');
+
+    // BLUE tokens have totalSteps: 10, 20, 30, 40 = 100
+    expect(blue?.totalSteps).toBe(10 + 20 + 30 + 40);
   });
 });
