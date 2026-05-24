@@ -15,9 +15,10 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 7 | Results Modal with rankings | 🔲 Pending | PR5.2 |
-| 8 | Rematch Button UI | 🔲 Pending | PR5.2 |
-| 9 | Back to Lobby navigation | 🔲 Pending | PR5.2 |
+| 7 | Results Modal with rankings | ✅ Done | calculatePlayerRankings pure function + enhanced modal |
+| 8 | Rematch Button UI | ✅ Done | GameService.rematch() + onRematch handler |
+| 9 | Back to Lobby navigation | ✅ Done | onBackToLobby with proper cleanup |
+| 10 | Room status = COMPLETED on game end | ✅ Done | Edge Function detects phase FINISHED transition |
 
 ## PR5.3 — Chat (T31)
 
