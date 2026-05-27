@@ -54,16 +54,24 @@ export class RoomService {
 
   async listRooms(): Promise<Room[]> {
     this.loadingW.set(true);
-    const { data, error } = await this.supabase.client
-      .from('rooms')
-      .select('*')
-      .in('status', ['WAITING', 'PLAYING'])
-      .order('created_at', { ascending: false });
-    this.loadingW.set(false);
-    if (error) throw error;
-    const rooms = (data ?? []).map(rowToRoom);
-    this.roomsW.set(rooms);
-    return rooms;
+    try {
+      // Only show WAITING rooms that have players and were updated recently
+      const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(); // 4h ago
+      const { data, error } = await this.supabase.client
+        .from('rooms')
+        .select('*')
+        .eq('status', 'WAITING')
+        .gt('updated_at', cutoff)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const rooms = (data ?? [])
+        .map(rowToRoom)
+        .filter(r => r.players.length > 0); // only rooms with actual players
+      this.roomsW.set(rooms);
+      return rooms;
+    } finally {
+      this.loadingW.set(false);
+    }
   }
 
   async getRoom(roomId: string): Promise<Room> {
@@ -119,10 +127,17 @@ export class RoomService {
       .single();
     if (fetchError) throw fetchError;
     const room = rowToRoom(roomData);
+
+    // Already in the room → just return
     if (room.players.some((p) => p.id === userId)) {
       this.currentRoomW.set(room);
       return room;
     }
+
+    if (room.players.length >= room.maxPlayers) {
+      throw new Error('Room is full');
+    }
+
     const nextColor = COLORS[room.players.length];
     const player: Player = {
       id: userId,

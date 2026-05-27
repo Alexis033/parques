@@ -50,17 +50,22 @@ export class AuthService {
 
   async signInAnonymously(): Promise<Session | null> {
     this.loadingW.set(true);
-    const { data, error } = await this.supabase.client.auth.signInAnonymously();
-    if (error) {
+    try {
+      const { data, error } = await this.supabase.client.auth.signInAnonymously();
+      if (error) throw error;
+      this.sessionW.set(data.session);
+      if (data.session) {
+        // Profile is auto-created by DB trigger (000004_profile_trigger.sql)
+        // Load it here, don't insert manually
+        await this.loadProfile(data.session.user.id);
+      }
+      return data.session;
+    } catch (e) {
+      console.error('[AuthService] signInAnonymously failed', e);
+      throw e;
+    } finally {
       this.loadingW.set(false);
-      throw error;
     }
-    this.sessionW.set(data.session);
-    if (data.session) {
-      await this.ensureProfile(data.session.user.id);
-    }
-    this.loadingW.set(false);
-    return data.session;
   }
 
   async signOut(): Promise<void> {
@@ -71,11 +76,26 @@ export class AuthService {
 
   private async ensureProfile(userId: string): Promise<void> {
     const displayName = `Player_${userId.slice(0, 6)}`;
-    const { error } = await this.supabase.client.from('profiles').upsert(
-      { id: userId, display_name: displayName },
-      { onConflict: 'id', ignoreDuplicates: false },
-    );
-    if (error) console.error('[AuthService] upsert profile failed', error);
+    // Check if profile already exists
+    const { data: existing } = await this.supabase.client
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+    if (existing) return;
+    // Insert profile — upsert can be tricky with RLS, use simple insert
+    const { error } = await this.supabase.client
+      .from('profiles')
+      .insert({ id: userId, display_name: displayName });
+    if (error) {
+      console.error('[AuthService] insert profile failed', error);
+      // If it already existed (race), load and continue
+      if (error.code === '23505') {
+        await this.loadProfile(userId);
+        return;
+      }
+      throw error;
+    }
     await this.loadProfile(userId);
   }
 
@@ -84,11 +104,25 @@ export class AuthService {
       .from('profiles')
       .select('id, display_name')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
     if (error) {
       console.error('[AuthService] load profile failed', error);
       return;
     }
-    this.profileW.set(data);
+    if (data) {
+      this.profileW.set(data);
+      return;
+    }
+    // Profile doesn't exist (TTL cleanup or trigger missed).
+    // Auto-create it so FK constraints (rooms.host_id) still work.
+    const displayName = `Player_${userId.slice(0, 6)}`;
+    const { error: insertError } = await this.supabase.client
+      .from('profiles')
+      .insert({ id: userId, display_name: displayName });
+    if (insertError) {
+      console.error('[AuthService] insert profile fallback failed', insertError);
+      return;
+    }
+    this.profileW.set({ id: userId, display_name: displayName });
   }
 }

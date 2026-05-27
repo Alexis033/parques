@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, computed, inject, effect } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, signal, computed, inject, effect, Injector } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { GameService, type GameInfo } from '../../services/game/game.service';
 import { RoomService } from '../../services/room/room.service';
@@ -92,6 +92,10 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
 
           <div class="game-sidebar">
             <div class="turn-indicator">
+              <div class="my-color-indicator">
+                <span class="color-dot" [style.background]="colorHex(myColor())"></span>
+                <span class="color-label">You are <strong>{{ colorName(myColor()) }}</strong></span>
+              </div>
               @if (isMyTurn()) {
                 <span class="my-turn-badge">Your Turn</span>
               } @else {
@@ -260,6 +264,22 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
       text-align: center;
       padding: 0.5rem;
     }
+    .my-color-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.85rem;
+      color: #555;
+    }
+    .color-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .color-label strong { text-transform: uppercase; }
     .my-turn-badge {
       background: #2ecc71;
       color: white;
@@ -432,6 +452,7 @@ export class GameComponent implements OnInit, OnDestroy {
   protected roomService = inject(RoomService);
   protected auth = inject(AuthService);
   private chatService = inject(ChatService);
+  private injector = inject(Injector);
 
   protected gameId: string | null = null;
 
@@ -447,6 +468,13 @@ export class GameComponent implements OnInit, OnDestroy {
   protected showMoveSelector = signal(false);
   protected highlightPath = signal<BoardPosition[] | null>(null);
   protected prevGameInfo: GameInfo | null = null;
+  protected myColor = computed(() => {
+    const state = this.engineStateC();
+    const uid = this.auth.userId;
+    if (!state || !uid) return null;
+    const me = state.players.find(p => p.id === uid);
+    return me?.color ?? null;
+  });
 
   // Computed
   protected boardLayout: SquareInfo[] = BOARD_LAYOUT;
@@ -583,7 +611,7 @@ export class GameComponent implements OnInit, OnDestroy {
           this.chatService.sendSystemMessage(this.gameId, `${winner} won the game!`).catch(() => {});
         }
       }
-    });
+    }, { injector: this.injector });
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) {
       this.router.navigate(['/lobby']);
@@ -612,6 +640,15 @@ export class GameComponent implements OnInit, OnDestroy {
 
       this.unsubRoom = this.roomService.subscribeToRoom(roomId, (updated) => {
         this.currentRoom.set(updated);
+        // Fix 1: Auto-transition non-host players when game starts
+        if (updated.status === 'PLAYING' && this.view() === 'waiting') {
+          this.gameService.findGameByRoomId(roomId).then(game => {
+            if (game) {
+              this.onGameReady(game);
+              this.gameService.startHeartbeat(roomId);
+            }
+          }).catch(() => {});
+        }
       });
 
       const existingGame = await this.gameService.findGameByRoomId(roomId);
@@ -774,6 +811,22 @@ export class GameComponent implements OnInit, OnDestroy {
     return state.players[state.currentPlayerIndex]?.color === color;
   }
 
+  protected colorHex(color: PlayerColor | null): string {
+    const map: Record<string, string> = {
+      RED: '#e74c3c', BLUE: '#3498db',
+      GREEN: '#2ecc71', YELLOW: '#f1c40f',
+    };
+    return color ? (map[color] ?? '#888') : '#888';
+  }
+
+  protected colorName(color: PlayerColor | null): string {
+    const map: Record<string, string> = {
+      RED: 'Red', BLUE: 'Blue',
+      GREEN: 'Green', YELLOW: 'Yellow',
+    };
+    return color ? (map[color] ?? 'Unknown') : '-';
+  }
+
   getStackIndex(token: EngineToken): number {
     const state = this.engineState();
     if (!state) return 0;
@@ -792,10 +845,21 @@ export class GameComponent implements OnInit, OnDestroy {
     }
   }
 
+  @HostListener('window:beforeunload', ['$event'])
+  beforeUnload(_event: Event): void {
+    // Fire-and-forget: page is closing, no time to await
+    if (this.gameId) {
+      const roomId = this.gameId;
+      this.roomService.leaveRoom(roomId).catch(() => {});
+      this.gameService.sendDisconnect(roomId).catch(() => {});
+    }
+  }
+
   ngOnDestroy(): void {
-    // Send disconnect signal before cleaning up
     if (this.gameId) {
       this.gameService.sendDisconnect(this.gameId);
+      // Fix 3: Also remove player from room so it doesn't accumulate stale rooms
+      this.roomService.leaveRoom(this.gameId).catch(() => {});
     }
     this.unsubRoom?.();
     this.gameService.leaveGame();

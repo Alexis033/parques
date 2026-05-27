@@ -39,6 +39,7 @@ testem.log
 
 # Environment
 .env
+src/env-config.js
 
 # OpenCode state
 .atl/

@@ -174,7 +174,7 @@ export class DemoComponent {
       { id: 'u3', color: 'GREEN', name: 'Charlie', isHost: false, isConnected: true },
     ],
     maxPlayers: 4,
-    status: 'IN_PROGRESS',
+    status: 'PLAYING',
     houseRules: { soplarCorrespondiente: true, patearSeguroSalida: false, exitRule: 'ALL' },
     createdAt: new Date().toISOString(),
   });

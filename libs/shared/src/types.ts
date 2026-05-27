@@ -83,7 +83,7 @@ export type GameAction =
 
 export type GamePhase = 'WAITING' | 'PLAYING' | 'FINISHED';
 
-export type GameStatus = 'IDLE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export type GameStatus = 'WAITING' | 'PLAYING' | 'COMPLETED' | 'CANCELLED';
 
 export interface Player {
   id: string;
