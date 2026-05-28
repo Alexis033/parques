@@ -1,0 +1,9 @@
+change: db-auto-cleanup
+phase: spec
+artifact_store: hybrid
+artifacts:
+  proposal: true
+  specs: true
+  design: false
+  tasks: false
+last_updated: 2026-05-27

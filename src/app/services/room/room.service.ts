@@ -4,6 +4,7 @@ import { AuthService } from '../auth/auth.service';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Room, Player, HouseRules, GameStatus } from '@parchis/shared';
 import { DEFAULT_HOUSE_RULES, COLORS } from '@parchis/shared';
+import { getClientId } from './room-utils';
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -49,6 +50,8 @@ export class RoomService {
   readonly rooms = this.roomsW.asReadonly();
   readonly currentRoom = this.currentRoomW.asReadonly();
   readonly loading = this.loadingW.asReadonly();
+
+  private clientId = getClientId();
 
   private roomChannel: ReturnType<SupabaseService['client']['channel']> | null = null;
 
@@ -96,6 +99,7 @@ export class RoomService {
       name: displayName,
       isHost: true,
       isConnected: true,
+      clientId: this.clientId,
     };
     let code = generateRoomCode();
     const { data, error } = await this.supabase.client
@@ -120,41 +124,25 @@ export class RoomService {
     const userId = this.auth.userId;
     if (!userId) throw new Error('Not authenticated');
     const displayName = this.auth.profile()?.display_name ?? `Player_${userId.slice(0, 6)}`;
-    const { data: roomData, error: fetchError } = await this.supabase.client
-      .from('rooms')
-      .select('*')
-      .eq('id', roomId)
-      .single();
-    if (fetchError) throw fetchError;
-    const room = rowToRoom(roomData);
 
-    // Already in the room → just return
-    if (room.players.some((p) => p.id === userId)) {
-      this.currentRoomW.set(room);
-      return room;
-    }
+    // Get current player count from cached room for color assignment
+    const cached = this.currentRoomW();
+    const nextColor = cached ? COLORS[cached.players.length] : COLORS[0];
 
-    if (room.players.length >= room.maxPlayers) {
-      throw new Error('Room is full');
-    }
-
-    const nextColor = COLORS[room.players.length];
-    const player: Player = {
-      id: userId,
-      color: nextColor,
-      name: displayName,
-      isHost: false,
-      isConnected: true,
-    };
-    const updatedPlayers = [...room.players, player];
-    const { data: updateData, error: updateError } = await this.supabase.client
-      .from('rooms')
-      .update({ players: updatedPlayers })
-      .eq('id', roomId)
-      .select('*')
-      .single();
-    if (updateError) throw updateError;
-    const updated = rowToRoom(updateData);
+    // Call RPC for atomic join with clientId dedup
+    const { data, error: rpcError } = await this.supabase.client.rpc('join_room_with_dedup', {
+      p_room_id: roomId,
+      p_player: {
+        id: userId,
+        color: nextColor,
+        name: displayName,
+        isHost: false,
+        isConnected: true,
+        clientId: this.clientId,
+      },
+    });
+    if (rpcError) throw rpcError;
+    const updated = rowToRoom(data as unknown as RoomRow);
     this.currentRoomW.set(updated);
     return updated;
   }

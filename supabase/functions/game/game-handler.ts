@@ -29,6 +29,7 @@ export interface Player {
   name: string;
   isHost: boolean;
   isConnected: boolean;
+  clientId?: string;
   lastHeartbeat?: number;
 }
 

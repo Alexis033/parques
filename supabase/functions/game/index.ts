@@ -174,8 +174,15 @@ async function handleGameAction(
     });
   }
 
-  // If game just finished, update room status to COMPLETED
+  // If game just finished, delete messages then update room status to COMPLETED
   if (newState.phase === 'FINISHED' && currentState.phase !== 'FINISHED') {
+    // DELETE messages BEFORE room update — per spec: delete must precede room status change
+    const { error: msgErr } = await supabase
+      .from('messages')
+      .delete()
+      .eq('room_id', game.room_id);
+    if (msgErr) throw msgErr;
+
     await supabase.from('rooms').update({ status: 'COMPLETED' }).eq('id', game.room_id);
   }
 
