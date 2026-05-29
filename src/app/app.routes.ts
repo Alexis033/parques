@@ -3,7 +3,8 @@ import { Routes } from '@angular/router';
 export const routes: Routes = [
   {
     path: '',
-    loadComponent: () => import('./pages/demo').then((m) => m.DemoComponent),
+    redirectTo: 'lobby',
+    pathMatch: 'full',
   },
   {
     path: 'lobby',
