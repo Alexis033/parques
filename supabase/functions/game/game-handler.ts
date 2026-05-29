@@ -130,12 +130,11 @@ function mod(n: number, m: number): number {
 export function rollDice(ltMode: boolean): DiceRoll {
   const die1 = Math.floor(Math.random() * 6) + 1;
   const die2 = Math.floor(Math.random() * 6) + 1;
-  const totalRolls = 3;
   return {
     die1: ltMode ? die1 : die1 + die2,
     die2: ltMode ? 0 : die2,
     isPair: !ltMode && die1 === die2,
-    isParques: !ltMode && die1 === die2 && totalRolls >= 3,
+    isParques: false, // determined in handleRoll via consecutivePairs
     timestamp: Date.now(),
   };
 }
@@ -287,9 +286,21 @@ export function handleRoll(state: EngineState): EngineState {
   next.currentRoll = roll;
   next.consecutivePairs = roll.isPair ? next.consecutivePairs + 1 : 0;
   next.actions.push({ type: 'ROLL', playerId: color, timestamp: Date.now(), roll });
-  if (roll.isPair) next.extraTurnsRemaining = 1;
+
+  // Recompute isParques based on actual consecutive pair count
+  const isParques = roll.isPair && next.consecutivePairs >= 3;
+  next.currentRoll = { ...roll, isParques };
+
+  if (roll.isPair && !isParques) next.extraTurnsRemaining = 1;
+
+  // Jail: allow up to 3 attempts when all tokens in jail
   if (getPlayerTokens(next, color).every((t) => t.state === 'JAIL')) next.rollAttempts++;
-  if (roll.isParques) {
+  if (getPlayerTokens(next, color).every((t) => t.state === 'JAIL') && next.rollAttempts < 3 && !(roll.isPair && canExitJail(next))) {
+    next.turnPhase = 'ROLL';
+    return next;
+  }
+
+  if (isParques) {
     const advanced = [...next.tokens].filter((t) => t.color === color && (t.state === 'IN_TRANSIT' || t.state === 'IN_SKY'))
       .sort((a, b) => b.totalSteps - a.totalSteps);
     if (advanced.length > 0) {

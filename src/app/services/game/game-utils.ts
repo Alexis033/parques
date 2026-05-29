@@ -1,7 +1,7 @@
 // Pure utility functions for game service logic.
 // Kept separate for testability — zero dependencies.
 
-import type { EngineState, PlayerProgress } from '@parchis/engine';
+import type { EngineState, EngineToken, PlayerProgress } from '@parchis/engine';
 import type { PlayerColor } from '@parchis/shared';
 
 export interface PlayerRanking {
@@ -104,6 +104,15 @@ function getPlayerCieloProgress(state: EngineState, color: PlayerColor): number 
     }
   }
   return maxProgress;
+}
+
+/**
+ * Get all jailed tokens for a specific player color.
+ * Returns tokens where state === 'JAIL' (position -1 on the board).
+ * These are rendered in the player zone slots on the board.
+ */
+export function getJailedTokens(tokens: EngineToken[], color: PlayerColor): EngineToken[] {
+  return tokens.filter(t => t.color === color && t.state === 'JAIL');
 }
 
 /**

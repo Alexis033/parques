@@ -1,5 +1,6 @@
 import { Component, input, output, computed } from '@angular/core';
 import type { DiceRoll } from '@parchis/shared';
+import { computeDiceValues } from './dice-utils';
 
 const DOT_POSITIONS: Record<number, [number, number][]> = {
   1: [[50, 50]],
@@ -46,14 +47,14 @@ const DOT_POSITIONS: Record<number, [number, number][]> = {
         }
         @if (diceRoll()) {
           <div class="dice-sum">
-            Sum: {{ diceRoll()!.die1 + diceRoll()!.die2 }}
+            Total: {{ diceTotal() }}
           </div>
         }
       </div>
       @if (isPair()) {
         <div class="pair-badge">{{ isParques() ? 'PARQUES!' : 'Pair!' }}</div>
         @if (isParques()) {
-          <div class="parques-effect">Each die = 20!</div>
+          <div class="parques-effect">Cada dado vale 20! (Movés 40)</div>
         }
       }
       @if (enabled() && !rolling()) {
@@ -168,10 +169,18 @@ export class DiceComponent {
 
   roll = output<void>();
 
-  protected diceValues = computed(() => {
-    const r = this.diceRoll();
-    if (!r) return [1, 1];
-    return [r.die1, r.die2];
+  protected diceValues = computed<[number, number]>(() => {
+    const roll = this.diceRoll();
+    if (!roll) return [1, 1];
+    if (roll.isParques) return [20, 20];
+    return computeDiceValues(roll);
+  });
+
+  protected diceTotal = computed(() => {
+    const roll = this.diceRoll();
+    if (!roll) return 0;
+    if (roll.isParques) return 40;
+    return roll.die1; // die1 is combined sum (die1+die2)
   });
 
   protected isPair = computed(() => this.diceRoll()?.isPair ?? false);

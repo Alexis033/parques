@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, computed } from '@angular/core';
 import { BoardComponent } from '../../components/board/board.component';
 import { DiceComponent } from '../../components/dice/dice.component';
 import { MoveSelectorComponent } from '../../components/move-selector/move-selector.component';
@@ -69,12 +69,17 @@ import type { EngineToken, ValidAction } from '@parchis/engine';
         <section class="demo-section">
           <h2>Player Panels</h2>
           <div class="panels-grid">
-            @for (player of mockPlayers(); track player.id) {
+            @for (panel of demoPanels(); track panel.id) {
               <app-player-panel
-                [player]="player"
-                [tokens]="mockTokens()"
-                [isActive]="player.color === 'RED'"
-                [isMe]="player.color === 'BLUE'"
+                [name]="panel.name"
+                [colorHex]="panel.colorHex"
+                [isActive]="panel.isActive"
+                [isMe]="panel.isMe"
+                [isConnected]="panel.isConnected"
+                [isHost]="panel.isHost"
+                [crownedCount]="panel.crownedCount"
+                [jailCount]="panel.jailCount"
+                [activeCount]="panel.activeCount"
               />
             }
           </div>
@@ -164,6 +169,29 @@ export class DemoComponent {
     { id: 'u3', color: 'GREEN', name: 'Charlie', isHost: false, isConnected: true },
     { id: 'u4', color: 'YELLOW', name: 'Diana', isHost: true, isConnected: false },
   ]);
+
+  demoPanels = computed(() => {
+    const tokens = this.mockTokens();
+    const map: Record<string, string> = {
+      RED: '#e74c3c', BLUE: '#3498db',
+      GREEN: '#2ecc71', YELLOW: '#f1c40f',
+    };
+    return this.mockPlayers().map(p => {
+      const pt = tokens.filter(t => t.color === p.color);
+      return {
+        id: p.id,
+        name: p.name,
+        colorHex: map[p.color] ?? '#888',
+        isActive: p.color === 'RED',
+        isMe: p.color === 'BLUE',
+        isConnected: p.isConnected,
+        isHost: p.isHost,
+        crownedCount: pt.filter(t => t.state === 'CROWNED').length,
+        jailCount: pt.filter(t => t.state === 'JAIL').length,
+        activeCount: pt.filter(t => t.state === 'IN_TRANSIT' || t.state === 'IN_SKY').length,
+      };
+    });
+  });
 
   mockRoom = signal<Room>({
     id: 'room-1',

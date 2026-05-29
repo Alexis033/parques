@@ -1,16 +1,22 @@
-import { Component, input } from '@angular/core';
+import { Component, input, computed } from '@angular/core';
 import type { PlayerColor } from '@parchis/shared';
+import type { EngineToken } from '@parchis/engine';
+import { TokenComponent } from '../token/token.component';
 
 @Component({
   selector: 'app-player-zone',
   standalone: true,
+  imports: [TokenComponent],
   template: `
     <div class="zone" [class]="'zone-' + color().toLowerCase()">
       <div class="inner">
-        <div class="slot"></div>
-        <div class="slot"></div>
-        <div class="slot"></div>
-        <div class="slot"></div>
+        @for (slotToken of slotTokens(); track $index) {
+          <div class="slot">
+            @if (slotToken; as token) {
+              <app-token [token]="token" />
+            }
+          </div>
+        }
       </div>
     </div>
   `,
@@ -73,4 +79,11 @@ import type { PlayerColor } from '@parchis/shared';
 })
 export class PlayerZoneComponent {
   color = input.required<PlayerColor>();
+  jailTokens = input<EngineToken[]>([]);
+
+  /** Map jailed tokens to 4 slot positions (index 0-3) */
+  protected slotTokens = computed(() => {
+    const jailed = this.jailTokens();
+    return [0, 1, 2, 3].map(i => jailed[i] ?? null);
+  });
 }

@@ -3,6 +3,7 @@ import type { SquareInfo, BoardPosition } from '@parchis/shared';
 import type { PlayerColor } from '@parchis/shared';
 import type { EngineToken } from '@parchis/engine';
 import { COLORS } from '@parchis/shared';
+import { getJailedTokens } from '../../services/game/game-utils';
 import { BOARD_LAYOUT } from '@parchis/engine';
 import { BoardCellComponent } from './board-cell.component';
 import { BoardGoalComponent } from './board-goal.component';
@@ -25,6 +26,7 @@ export { getCellGridPosition } from './grid.config';
       @for (color of playerColors; track color) {
         <app-player-zone
           [color]="color"
+          [jailTokens]="jailedByColor()[color]"
           [style.grid-column]="zoneGrid[color].col"
           [style.grid-row]="zoneGrid[color].row"
         />
@@ -73,6 +75,7 @@ export class BoardComponent {
   tokens = input<EngineToken[]>([]);
   selectedTokenId = input<string | null>(null);
   validTokenIds = input<Set<string>>(new Set());
+  allTokens = input<EngineToken[]>([]);
 
   squareClick = output<BoardPosition>();
   tokenClick = output<string>();
@@ -81,6 +84,16 @@ export class BoardComponent {
   protected readonly zoneGrid = ZONE_GRID;
   protected readonly goalGrid = GOAL_GRID;
   protected readonly gridPos = getCellGridPosition;
+
+  /** Group jailed tokens by color for player zone rendering */
+  protected jailedByColor = computed(() => {
+    const all = this.allTokens();
+    const result: Record<string, EngineToken[]> = {};
+    for (const c of COLORS) {
+      result[c] = getJailedTokens(all, c);
+    }
+    return result;
+  });
 
   protected visibleLayout = computed(() => {
     return this.layout().filter(sq => getCellGridPosition(sq.id) !== undefined);

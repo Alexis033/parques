@@ -1,26 +1,18 @@
-import { Component, input, computed } from '@angular/core';
-import type { Player, PlayerColor } from '@parchis/shared';
-import type { EngineToken } from '@parchis/engine';
-
-const COLOR_VALUES: Record<PlayerColor, string> = {
-  RED: '#e74c3c',
-  BLUE: '#3498db',
-  GREEN: '#2ecc71',
-  YELLOW: '#f1c40f',
-};
+import { Component, input, ChangeDetectionStrategy } from '@angular/core';
 
 @Component({
     selector: 'app-player-panel',
     imports: [],
+    changeDetection: ChangeDetectionStrategy.OnPush,
     template: `
-    <div class="player-panel" [class.active]="isActive()" [class.me]="isMe()" [class.disconnected]="!player().isConnected">
+    <div class="player-panel" [class.active]="isActive()" [class.me]="isMe()" [class.disconnected]="!isConnected()">
       <div class="pp-header">
         <span class="pp-color" [style.background]="colorHex()"></span>
-        <span class="pp-name">{{ player().name }}</span>
+        <span class="pp-name">{{ name() }}</span>
         @if (isMe()) {
           <span class="me-badge">You</span>
         }
-        @if (player().isHost) {
+        @if (isHost()) {
           <span class="host-badge">Host</span>
         }
       </div>
@@ -40,7 +32,7 @@ const COLOR_VALUES: Record<PlayerColor, string> = {
         </div>
       </div>
 
-      @if (!player().isConnected) {
+      @if (!isConnected()) {
         <div class="disconnected">Disconnected</div>
       }
     </div>
@@ -126,26 +118,13 @@ const COLOR_VALUES: Record<PlayerColor, string> = {
   `]
 })
 export class PlayerPanelComponent {
-  player = input.required<Player>();
-  tokens = input<EngineToken[]>([]);
+  name = input.required<string>();
+  colorHex = input.required<string>();
   isActive = input(false);
   isMe = input(false);
-
-  protected colorHex = computed(() => COLOR_VALUES[this.player().color]);
-
-  protected playerTokens = computed(() =>
-    this.tokens().filter(t => t.color === this.player().color)
-  );
-
-  protected crownedCount = computed(() =>
-    this.playerTokens().filter(t => t.state === 'CROWNED').length
-  );
-
-  protected jailCount = computed(() =>
-    this.playerTokens().filter(t => t.state === 'JAIL').length
-  );
-
-  protected activeCount = computed(() =>
-    this.playerTokens().filter(t => t.state === 'IN_TRANSIT' || t.state === 'IN_SKY').length
-  );
+  isConnected = input(true);
+  isHost = input(false);
+  crownedCount = input(0);
+  jailCount = input(0);
+  activeCount = input(0);
 }

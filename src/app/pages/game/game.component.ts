@@ -66,6 +66,7 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
                 [validSquares]="validSquares()"
                 [highlightPath]="highlightPath()"
                 [tokens]="myTokens()"
+                [allTokens]="allEngineTokens()"
                 [selectedTokenId]="selectedToken()"
                 [validTokenIds]="validTokenIds()"
                 (squareClick)="onSquareClick($event)"
@@ -81,12 +82,14 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
             />
 
             @if (validActions().length > 0 && showMoveSelector()) {
-              <app-move-selector
-                [validActions]="validActions()"
-                [currentRoll]="currentRoll()"
-                (selectAction)="onActionSelected($event)"
-                (cancelSelection)="onMoveCancel()"
-              />
+              <div class="move-selector-area">
+                <app-move-selector
+                  [validActions]="validActions()"
+                  [currentRoll]="currentRoll()"
+                  (selectAction)="onActionSelected($event)"
+                  (cancelSelection)="onMoveCancel()"
+                />
+              </div>
             }
           </div>
 
@@ -104,14 +107,25 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
             </div>
 
             <div class="players-sidebar">
-              @for (player of players(); track player.id) {
+              @for (panel of playerPanels(); track panel.id) {
                 <app-player-panel
-                  [player]="player"
-                  [tokens]="allEngineTokens()"
-                  [isActive]="isPlayerActive(player.color)"
-                  [isMe]="player.id === auth.userId"
+                  [name]="panel.name"
+                  [colorHex]="panel.colorHex"
+                  [isActive]="panel.isActive"
+                  [isMe]="panel.isMe"
+                  [isConnected]="panel.isConnected"
+                  [isHost]="panel.isHost"
+                  [crownedCount]="panel.crownedCount"
+                  [jailCount]="panel.jailCount"
+                  [activeCount]="panel.activeCount"
                 />
               }
+            </div>
+
+            <div class="sidebar-actions">
+              <button class="leave-btn" (click)="onBackToLobby()">
+                🚪 Leave Game
+              </button>
             </div>
 
             <app-chat
@@ -254,6 +268,11 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
       justify-content: center;
     }
 
+    .move-selector-area {
+      min-height: 60px;
+      width: 100%;
+    }
+
     .game-sidebar {
       display: flex;
       flex-direction: column;
@@ -302,6 +321,35 @@ type ViewState = 'loading' | 'waiting' | 'playing' | 'error';
     .players-sidebar {
       display: flex;
       flex-direction: column;
+    }
+
+    .sidebar-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .leave-btn {
+      width: 100%;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 8px;
+      background: #ecf0f1;
+      color: #555;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+    }
+    .leave-btn:hover {
+      background: #dde4e6;
+      color: #333;
+    }
+    .leave-btn:active {
+      transform: scale(0.97);
     }
 
     .game-over-modal {
@@ -511,6 +559,30 @@ export class GameComponent implements OnInit, OnDestroy {
   });
   protected players = computed(() => this.engineStateC()?.players ?? []);
   protected allEngineTokens = computed(() => this.engineStateC()?.tokens ?? []);
+  protected playerPanels = computed(() => {
+    const state = this.engineStateC();
+    const uid = this.auth.userId;
+    if (!state) return [];
+    const map: Record<string, string> = {
+      RED: '#e74c3c', BLUE: '#3498db',
+      GREEN: '#2ecc71', YELLOW: '#f1c40f',
+    };
+    return state.players.map(p => {
+      const playerTokens = state.tokens.filter(t => t.color === p.color);
+      return {
+        id: p.id,
+        name: p.name,
+        colorHex: map[p.color] ?? '#888',
+        isActive: state.players[state.currentPlayerIndex]?.color === p.color,
+        isMe: p.id === uid,
+        isConnected: p.isConnected,
+        isHost: p.isHost,
+        crownedCount: playerTokens.filter(t => t.state === 'CROWNED').length,
+        jailCount: playerTokens.filter(t => t.state === 'JAIL').length,
+        activeCount: playerTokens.filter(t => t.state === 'IN_TRANSIT' || t.state === 'IN_SKY').length,
+      };
+    });
+  });
   protected currentRoll = computed(() => this.engineStateC()?.currentRoll ?? null);
   protected isGameOverSignal = computed(() => {
     const state = this.engineStateC();
@@ -817,13 +889,6 @@ export class GameComponent implements OnInit, OnDestroy {
   onDismissGameOver(): void {
     // Modal stays until navigated away
   }
-
-  isPlayerActive(color: PlayerColor): boolean {
-    const state = this.engineState();
-    if (!state) return false;
-    return state.players[state.currentPlayerIndex]?.color === color;
-  }
-
   protected colorHex(color: PlayerColor | null): string {
     const map: Record<string, string> = {
       RED: '#e74c3c', BLUE: '#3498db',

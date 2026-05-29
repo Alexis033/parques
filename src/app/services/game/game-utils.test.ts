@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { calculateBackoff, isRetryableError, withRetry, buildGameChannelName, calculatePlayerRankings, type PlayerRanking } from './game-utils';
+import { calculateBackoff, isRetryableError, withRetry, buildGameChannelName, calculatePlayerRankings, getJailedTokens, type PlayerRanking } from './game-utils';
 import type { EngineState, EngineToken } from '@parchis/engine';
 import type { PlayerColor, BoardPosition } from '@parchis/shared';
 
@@ -299,5 +299,57 @@ describe('calculatePlayerRankings', () => {
 
     // BLUE tokens have totalSteps: 10, 20, 30, 40 = 100
     expect(blue?.totalSteps).toBe(10 + 20 + 30 + 40);
+  });
+});
+
+// ---------- getJailedTokens ----------
+
+describe('getJailedTokens', () => {
+  it('should return empty array when no tokens are in jail', () => {
+    const tokens: EngineToken[] = [
+      makeToken('r1', 'RED', 10, 'IN_TRANSIT', 5),
+      makeToken('b1', 'BLUE', 20, 'CROWNED', 100),
+    ];
+    expect(getJailedTokens(tokens, 'RED')).toEqual([]);
+    expect(getJailedTokens(tokens, 'BLUE')).toEqual([]);
+  });
+
+  it('should return only tokens matching the requested color in JAIL state', () => {
+    const tokens: EngineToken[] = [
+      makeToken('r1', 'RED', 0, 'JAIL', 0, 0),
+      makeToken('r2', 'RED', -1, 'JAIL', 0, 1),
+      makeToken('b1', 'BLUE', 10, 'IN_TRANSIT', 50),
+      makeToken('r3', 'RED', 15, 'IN_TRANSIT', 30),
+      makeToken('b2', 'BLUE', -1, 'JAIL', 0, 2),
+    ];
+    const redJailed = getJailedTokens(tokens, 'RED');
+    expect(redJailed).toHaveLength(2);
+    expect(redJailed.map(t => t.id)).toEqual(['r1', 'r2']);
+
+    const blueJailed = getJailedTokens(tokens, 'BLUE');
+    expect(blueJailed).toHaveLength(1);
+    expect(blueJailed[0].id).toBe('b2');
+  });
+
+  it('should return empty array for color with no tokens at all', () => {
+    const tokens: EngineToken[] = [
+      makeToken('r1', 'RED', -1, 'JAIL'),
+    ];
+    expect(getJailedTokens(tokens, 'GREEN')).toEqual([]);
+    expect(getJailedTokens(tokens, 'YELLOW')).toEqual([]);
+  });
+
+  it('should filter by color correctly when multiple colors have jailed tokens', () => {
+    const tokens: EngineToken[] = [
+      makeToken('r1', 'RED', -1, 'JAIL', 0, 0),
+      makeToken('r2', 'RED', -1, 'JAIL', 0, 1),
+      makeToken('b1', 'BLUE', -1, 'JAIL', 0, 0),
+      makeToken('b2', 'BLUE', -1, 'JAIL', 0, 1),
+      makeToken('b3', 'BLUE', -1, 'JAIL', 0, 2),
+      makeToken('b4', 'BLUE', 5, 'IN_TRANSIT', 20),
+    ];
+    expect(getJailedTokens(tokens, 'RED')).toHaveLength(2);
+    expect(getJailedTokens(tokens, 'BLUE')).toHaveLength(3);
+    expect(getJailedTokens(tokens, 'GREEN')).toHaveLength(0);
   });
 });

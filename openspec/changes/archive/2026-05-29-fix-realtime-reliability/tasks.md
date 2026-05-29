@@ -46,4 +46,4 @@ Chain strategy: pending
 - [x] 4.1 Create `supabase/functions/game/index.dashboard.ts` — self-contained Edge Function with DELETE ordering ported
 - [x] 4.2 Run `pnpm vitest` — all test suites green (295 total, 23 new)
 - [x] 4.3 Run `ng build` — strict-mode TypeScript compiles with zero errors
-- [ ] 4.4 Commit all changes with conventional commit message
+- [x] 4.4 Commit all changes with conventional commit message
