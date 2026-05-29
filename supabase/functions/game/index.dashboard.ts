@@ -1,6 +1,86 @@
-// Self-contained game logic for Supabase Edge Function (merged for dashboard deploy)
+// Self-contained game logic for Supabase Edge Function.
+// Uses raw fetch for REST and Realtime — no npm dependencies.
+// Paste this entire file into the Supabase Dashboard → Edge Functions → game → index.ts
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
-import { createClient } from 'npm:@supabase/supabase-js@2.39.0';
+
+// ========================================================================
+// Supabase REST client (no npm dependency)
+// ========================================================================
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+
+const REST_HEADERS = {
+  'Content-Type': 'application/json',
+  'apikey': SERVICE_KEY,
+  'Authorization': `Bearer ${SERVICE_KEY}`,
+  'Prefer': 'return=representation',
+};
+
+async function restGet<T = unknown>(path: string, query?: string): Promise<T[]> {
+  const url = `${SUPABASE_URL}/rest/v1/${path}${query ? '?' + query : ''}`;
+  const res = await fetch(url, { method: 'GET', headers: REST_HEADERS });
+  if (!res.ok) throw new Error(`REST GET ${path} failed: ${res.status}`);
+  return res.json();
+}
+
+async function restGetSingle<T = unknown>(path: string, query?: string): Promise<T | null> {
+  const results = await restGet<T>(path, query);
+  return results[0] ?? null;
+}
+
+async function restInsert<T = unknown>(table: string, body: unknown): Promise<T[]> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: REST_HEADERS,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`REST INSERT ${table} failed: ${res.status}`);
+  return res.json();
+}
+
+async function restUpdate<T = unknown>(table: string, query: string, body: unknown): Promise<T[]> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
+    method: 'PATCH',
+    headers: REST_HEADERS,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`REST UPDATE ${table} failed: ${res.status}`);
+  return res.json();
+}
+
+async function restDelete(table: string, query: string): Promise<void> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
+    method: 'DELETE',
+    headers: REST_HEADERS,
+  });
+  if (!res.ok) throw new Error(`REST DELETE ${table} failed: ${res.status}`);
+}
+
+// Realtime broadcast via REST channel API
+async function broadcastGameState(roomId: string, state: EngineState, version: number): Promise<void> {
+  const payload = {
+    channel: `game:${roomId}`,
+    name: 'broadcast',
+    type: 'broadcast',
+    event: 'state_update',
+    payload: { state, version },
+  };
+  const res = await fetch(`${SUPABASE_URL}/realtime/v1/api/broadcast`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SERVICE_KEY,
+      'Authorization': `Bearer ${SERVICE_KEY}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    // Broadcast is best-effort — log but don't throw
+    console.error(`Broadcast failed: ${res.status}`);
+  }
+}
 
 // ========================================================================
 // Types
@@ -475,15 +555,8 @@ function handleRematch(state: EngineState, houseRules: HouseRules): EngineState 
 }
 
 // ========================================================================
-// Supabase client and CORS
+// CORS headers
 // ========================================================================
-
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
-const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: { persistSession: false },
-});
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -518,30 +591,29 @@ async function handleStartGame(payload: GameActionPayload): Promise<Response> {
     });
   }
 
-  const { data: roomData, error: roomError } = await supabase
-    .from('rooms')
-    .select('*')
-    .eq('id', roomId)
-    .single();
-  if (roomError || !roomData) {
+  const roomData = await restGetSingle<Record<string, unknown>>(
+    'rooms', `select=*&id=eq.${roomId}`,
+  );
+  if (!roomData) {
     return new Response(JSON.stringify({ error: 'Room not found' }), {
       status: 404,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
     });
   }
 
+  const players = roomData.players as Player[];
+  const houseRules = roomData.house_rules as HouseRules;
   const gameId = crypto.randomUUID();
-  const initialState = createInitialState(gameId, roomId, roomData.players, roomData.house_rules);
+  const initialState = createInitialState(gameId, roomId, players, houseRules);
 
-  const { error: insertError } = await supabase.from('games').insert({
+  await restInsert('games', {
     id: gameId,
     room_id: roomId,
     state: initialState,
     version: 1,
   });
-  if (insertError) throw insertError;
 
-  await supabase.from('rooms').update({ status: 'PLAYING' }).eq('id', roomId);
+  await restUpdate('rooms', `id=eq.${roomId}`, { status: 'PLAYING' });
   await broadcastGameState(roomId, initialState, 1);
 
   return new Response(JSON.stringify({ gameId, state: initialState, version: 1 }), {
@@ -562,12 +634,10 @@ async function handleGameAction(
     });
   }
 
-  const { data: gameData, error: fetchError } = await supabase
-    .from('games')
-    .select('*')
-    .eq('id', gameId)
-    .single();
-  if (fetchError || !gameData) {
+  const gameData = await restGetSingle<Record<string, unknown>>(
+    'games', `select=*&id=eq.${gameId}`,
+  );
+  if (!gameData) {
     return new Response(JSON.stringify({ error: 'Game not found' }), {
       status: 404,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -587,12 +657,11 @@ async function handleGameAction(
 
   const newVersion = game.version + 1;
 
-  const { error: updateError } = await supabase
-    .from('games')
-    .update({ state: newState, version: newVersion })
-    .eq('id', gameId)
-    .eq('version', game.version);
-  if (updateError) {
+  const updated = await restUpdate<Record<string, unknown>>(
+    'games', `id=eq.${gameId}&version=eq.${game.version}`,
+    { state: newState, version: newVersion },
+  );
+  if (updated.length === 0) {
     return new Response(JSON.stringify({ error: 'Conflict: stale version, retry' }), {
       status: 409,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -601,13 +670,8 @@ async function handleGameAction(
 
   if (newState.phase === 'FINISHED' && currentState.phase !== 'FINISHED') {
     // DELETE messages BEFORE room update — per spec: delete must precede room status change
-    const { error: msgErr } = await supabase
-      .from('messages')
-      .delete()
-      .eq('room_id', game.room_id);
-    if (msgErr) throw msgErr;
-
-    await supabase.from('rooms').update({ status: 'COMPLETED' }).eq('id', game.room_id);
+    await restDelete('messages', `room_id=eq.${game.room_id}`);
+    await restUpdate('rooms', `id=eq.${game.room_id}`, { status: 'COMPLETED' });
   }
 
   await broadcastGameState(game.room_id, newState, newVersion);
@@ -615,14 +679,6 @@ async function handleGameAction(
   return new Response(JSON.stringify({ state: newState, version: newVersion }), {
     status: 200,
     headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-  });
-}
-
-async function broadcastGameState(roomId: string, state: EngineState, version: number): Promise<void> {
-  await supabase.channel(`game:${roomId}`).send({
-    type: 'broadcast',
-    event: 'state_update',
-    payload: { state, version },
   });
 }
 
@@ -635,15 +691,10 @@ async function handleHeartbeat(payload: GameActionPayload): Promise<Response> {
     });
   }
 
-  const { data: gameData, error: fetchError } = await supabase
-    .from('games')
-    .select('*')
-    .eq('room_id', roomId)
-    .order('version', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (fetchError || !gameData) {
+  const gameData = await restGetSingle<Record<string, unknown>>(
+    'games', `select=*&room_id=eq.${roomId}&order=version.desc&limit=1`,
+  );
+  if (!gameData) {
     return new Response(JSON.stringify({ error: 'No active game found' }), {
       status: 404,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -675,18 +726,7 @@ async function handleHeartbeat(payload: GameActionPayload): Promise<Response> {
   }
 
   const newVersion = game.version + 1;
-  const { error: updateError } = await supabase
-    .from('games')
-    .update({ state: updatedState, version: newVersion })
-    .eq('id', game.id);
-
-  if (updateError) {
-    return new Response(JSON.stringify({ error: 'Failed to update connection state' }), {
-      status: 500,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-    });
-  }
-
+  await restUpdate('games', `id=eq.${game.id}`, { state: updatedState, version: newVersion });
   await broadcastGameState(roomId, updatedState, newVersion);
 
   return new Response(JSON.stringify({ ok: true, state: updatedState, version: newVersion }), {
@@ -704,15 +744,10 @@ async function handleDisconnectAction(payload: GameActionPayload): Promise<Respo
     });
   }
 
-  const { data: gameData, error: fetchError } = await supabase
-    .from('games')
-    .select('*')
-    .eq('room_id', roomId)
-    .order('version', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (fetchError || !gameData) {
+  const gameData = await restGetSingle<Record<string, unknown>>(
+    'games', `select=*&room_id=eq.${roomId}&order=version.desc&limit=1`,
+  );
+  if (!gameData) {
     return new Response(JSON.stringify({ error: 'No active game found' }), {
       status: 404,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -731,18 +766,7 @@ async function handleDisconnectAction(payload: GameActionPayload): Promise<Respo
   }
 
   const newVersion = game.version + 1;
-  const { error: updateError } = await supabase
-    .from('games')
-    .update({ state: updatedState, version: newVersion })
-    .eq('id', game.id);
-
-  if (updateError) {
-    return new Response(JSON.stringify({ error: 'Failed to update connection state' }), {
-      status: 500,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-    });
-  }
-
+  await restUpdate('games', `id=eq.${game.id}`, { state: updatedState, version: newVersion });
   await broadcastGameState(roomId, updatedState, newVersion);
 
   return new Response(JSON.stringify({ ok: true, state: updatedState, version: newVersion }), {
@@ -760,15 +784,10 @@ async function handleRematchAction(payload: GameActionPayload): Promise<Response
     });
   }
 
-  const { data: gameData, error: fetchError } = await supabase
-    .from('games')
-    .select('*')
-    .eq('room_id', roomId)
-    .order('version', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (fetchError || !gameData) {
+  const gameData = await restGetSingle<Record<string, unknown>>(
+    'games', `select=*&room_id=eq.${roomId}&order=version.desc&limit=1`,
+  );
+  if (!gameData) {
     return new Response(JSON.stringify({ error: 'No game found for this room' }), {
       status: 404,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -778,12 +797,9 @@ async function handleRematchAction(payload: GameActionPayload): Promise<Response
   const game = gameData as unknown as GameRow;
   const currentState = game.state;
 
-  const { data: roomData } = await supabase
-    .from('rooms')
-    .select('*')
-    .eq('id', roomId)
-    .single();
-
+  const roomData = await restGetSingle<Record<string, unknown>>(
+    'rooms', `select=*&id=eq.${roomId}`,
+  );
   if (!roomData) {
     return new Response(JSON.stringify({ error: 'Room not found' }), {
       status: 404,
@@ -795,19 +811,12 @@ async function handleRematchAction(payload: GameActionPayload): Promise<Response
   const players = roomData.players as Player[];
   const initialState = createInitialState(newGameId, roomId, players, currentState.houseRules);
 
-  const { error: insertError } = await supabase.from('games').insert({
+  await restInsert('games', {
     id: newGameId,
     room_id: roomId,
     state: initialState,
     version: 1,
   });
-
-  if (insertError) {
-    return new Response(JSON.stringify({ error: 'Failed to create rematch' }), {
-      status: 500,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-    });
-  }
 
   await broadcastGameState(roomId, initialState, 1);
 

@@ -18,11 +18,17 @@ export class AuthService {
   readonly profile = this.profileW.asReadonly();
   readonly loading = this.loadingW.asReadonly();
 
+  private initPromise: Promise<void>;
+  private pendingSignInPromise: Promise<Session | null> | null = null;
+
   constructor() {
-    this.supabase.client.auth.getSession().then(({ data }) => {
+    this.initPromise = this.supabase.client.auth.getSession().then(({ data }) => {
       const s = data.session;
-      this.sessionW.set(s);
-      if (s) this.loadProfile(s.user.id);
+      // Only set if no session was established by onAuthStateChange already
+      if (!this.sessionW()) {
+        this.sessionW.set(s);
+        if (s) this.loadProfile(s.user.id);
+      }
     });
 
     this.supabase.client.auth.onAuthStateChange((event, session) => {
@@ -51,15 +57,31 @@ export class AuthService {
   async signInAnonymously(): Promise<Session | null> {
     this.loadingW.set(true);
     try {
-      const { data, error } = await this.supabase.client.auth.signInAnonymously();
-      if (error) throw error;
-      this.sessionW.set(data.session);
-      if (data.session) {
-        // Profile is auto-created by DB trigger (000004_profile_trigger.sql)
-        // Load it here, don't insert manually
-        await this.loadProfile(data.session.user.id);
-      }
-      return data.session;
+      // Wait for initial session check to avoid race with getSession()
+      await this.initPromise;
+
+      // If already authenticated (session restored from localStorage), skip sign-in
+      if (this.sessionW()) return this.sessionW();
+
+      // Concurrent guard: deduplicate simultaneous sign-in calls.
+      // Once the promise settles, the sessionW() check above handles dedup — 
+      // the stale promise never returns to a new caller because sessionW() 
+      // will already be set.
+      if (this.pendingSignInPromise) return this.pendingSignInPromise;
+
+      this.pendingSignInPromise = this.supabase.client.auth.signInAnonymously()
+        .then(async ({ data, error }) => {
+          if (error) throw error;
+          this.sessionW.set(data.session);
+          if (data.session) {
+            // Profile is auto-created by DB trigger (000004_profile_trigger.sql)
+            // Load it here, don't insert manually
+            await this.loadProfile(data.session.user.id);
+          }
+          return data.session;
+        });
+
+      return await this.pendingSignInPromise;
     } catch (e) {
       console.error('[AuthService] signInAnonymously failed', e);
       throw e;

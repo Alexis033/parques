@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createInitialState, handleHeartbeat, handleDisconnect, handleRematch, type HouseRules, type Player } from './game-handler';
+import { createInitialState, handleHeartbeat, handleDisconnect, handleRematch, handleEndTurn, type HouseRules, type Player, type EngineState, type EngineToken, type BoardPosition } from './game-handler';
 
 const defaultHouseRules: HouseRules = {
   soplarCorrespondiente: true,
@@ -114,5 +114,90 @@ describe('handleRematch', () => {
     expect(rematch.round).toBe(1);
     expect(rematch.currentPlayerIndex).toBe(0);
     expect(rematch.turnPhase).toBe('ROLL');
+  });
+});
+
+/**
+ * Helper: set all tokens of a given color to CROWNED at their cielo end position.
+ */
+function crownAllTokens(state: EngineState, color: string): void {
+  const cieloEndMap: Record<string, BoardPosition> = {
+    RED: 75, BLUE: 83, GREEN: 91, YELLOW: 99,
+  };
+  const endPos = cieloEndMap[color] ?? 75;
+  state.tokens = state.tokens.map((t: EngineToken) =>
+    t.color === color
+      ? { ...t, state: 'CROWNED' as const, position: endPos, totalSteps: 100 }
+      : t,
+  );
+}
+
+describe('handleEndTurn — game-over / DELETE ordering condition', () => {
+  it('should set phase to FINISHED when a player crowns all 4 tokens', () => {
+    const state = createInitialState('game-1', 'room-1', makePlayers(), defaultHouseRules);
+    state.turnPhase = 'TURN_END';
+    crownAllTokens(state, 'RED');
+
+    const result = handleEndTurn(state);
+    expect(result.phase).toBe('FINISHED');
+    expect(result.winner).toBe('RED');
+  });
+
+  it('should detect ANY player as winner (not just current)', () => {
+    const state = createInitialState('game-1', 'room-1', makePlayers(), defaultHouseRules);
+    state.turnPhase = 'TURN_END';
+    // Crown BLUE tokens — not current player (RED), but should still detect
+    crownAllTokens(state, 'BLUE');
+
+    const result = handleEndTurn(state);
+    expect(result.phase).toBe('FINISHED');
+    expect(result.winner).toBe('BLUE');
+  });
+
+  it('should NOT finish when no player has all 4 crowned', () => {
+    const state = createInitialState('game-1', 'room-1', makePlayers(), defaultHouseRules);
+    state.turnPhase = 'TURN_END';
+    // Only crown 2 tokens for RED
+    state.tokens = state.tokens.map((t: EngineToken) =>
+      t.color === 'RED' && (t.index === 0 || t.index === 1)
+        ? { ...t, state: 'CROWNED' as const, position: 75 as BoardPosition, totalSteps: 100 }
+        : t,
+    );
+
+    const result = handleEndTurn(state);
+    expect(result.phase).toBe('PLAYING');
+    expect(result.winner).toBeNull();
+  });
+
+  it('should preserve FINISHED phase (no re-trigger) on subsequent calls', () => {
+    const state = createInitialState('game-1', 'room-1', makePlayers(), defaultHouseRules);
+    state.turnPhase = 'TURN_END';
+    crownAllTokens(state, 'RED');
+
+    const firstCall = handleEndTurn(state);
+    expect(firstCall.phase).toBe('FINISHED');
+
+    // Second call on already FINISHED state — should return unchanged (guard: phase !== 'PLAYING')
+    const secondCall = handleEndTurn(firstCall);
+    expect(secondCall).toBe(firstCall);
+  });
+
+  it('should transition phase from PLAYING to FINISHED (condition for DELETE ordering)', () => {
+    // This simulates the condition checked in handleGameAction:
+    //   if (newState.phase === 'FINISHED' && currentState.phase !== 'FINISHED')
+    // The transition triggers: DELETE messages → UPDATE room status
+    const state = createInitialState('game-1', 'room-1', makePlayers(), defaultHouseRules);
+    expect(state.phase).toBe('PLAYING'); // initial phase
+
+    crownAllTokens(state, 'RED');
+    const result = handleEndTurn(state);
+
+    // Phase transition: PLAYING → FINISHED
+    expect(result.phase).toBe('FINISHED');
+    expect(state.phase).toBe('PLAYING'); // original unchanged (pure function)
+
+    // The DELETE ordering condition: newState.phase === 'FINISHED' && currentState.phase !== 'FINISHED'
+    const shouldDeleteMessages = result.phase === 'FINISHED' && state.phase !== 'FINISHED';
+    expect(shouldDeleteMessages).toBe(true);
   });
 });

@@ -469,11 +469,24 @@ export class GameComponent implements OnInit, OnDestroy {
   protected highlightPath = signal<BoardPosition[] | null>(null);
   protected prevGameInfo: GameInfo | null = null;
   protected myColor = computed(() => {
-    const state = this.engineStateC();
     const uid = this.auth.userId;
-    if (!state || !uid) return null;
-    const me = state.players.find(p => p.id === uid);
-    return me?.color ?? null;
+    if (!uid) return null;
+
+    // Try engine state first (during gameplay)
+    const state = this.engineStateC();
+    if (state) {
+      const me = state.players.find(p => p.id === uid);
+      if (me?.color) return me.color;
+    }
+
+    // Fallback: read from currentRoom (waiting room or engine state mismatch)
+    const room = this.currentRoom();
+    if (room) {
+      const me = room.players.find(p => p.id === uid);
+      return me?.color ?? null;
+    }
+
+    return null;
   });
 
   // Computed

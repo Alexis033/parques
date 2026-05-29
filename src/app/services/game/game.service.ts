@@ -1,6 +1,7 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthService } from '../auth/auth.service';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { EngineState } from '@parchis/engine';
 import type { PlayerColor } from '@parchis/shared';
 import { buildGameChannelName, withRetry } from './game-utils';
@@ -48,6 +49,7 @@ export class GameService {
   readonly error = this.errorW.asReadonly();
 
   private gameChannel: ReturnType<SupabaseService['client']['channel']> | null = null;
+  private gameDbChannel: ReturnType<SupabaseService['client']['channel']> | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   get currentState(): EngineState | null {
@@ -231,6 +233,7 @@ export class GameService {
 
   subscribeToRoom(roomId: string): void {
     this.gameChannel?.unsubscribe();
+    this.gameDbChannel?.unsubscribe();
     const channelName = buildGameChannelName(roomId);
     // Real-time via broadcast from Edge Function
     this.gameChannel = this.supabase.client
@@ -244,12 +247,32 @@ export class GameService {
         }
       })
       .subscribe();
+
+    // Fallback: listen for DB changes on games table
+    this.gameDbChannel = this.supabase.client
+      .channel(`games-db:${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'games', filter: `room_id=eq.${roomId}` },
+        (payload: RealtimePostgresChangesPayload<{ state: EngineState; version: number }>) => {
+          const gameData = payload.new as unknown as { id: string; state: EngineState; version: number } | null;
+          if (!gameData?.state) return;
+          const current = this.gameW();
+          if (current && gameData.version <= current.version) return;
+          if (current) {
+            this.gameW.set({ ...current, state: gameData.state, version: gameData.version });
+          }
+        },
+      )
+      .subscribe();
   }
 
   leaveGame(): void {
     this.stopHeartbeat();
     this.gameChannel?.unsubscribe();
     this.gameChannel = null;
+    this.gameDbChannel?.unsubscribe();
+    this.gameDbChannel = null;
     this.gameW.set(null);
     this.errorW.set(null);
   }
