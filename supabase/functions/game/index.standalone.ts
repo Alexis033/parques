@@ -335,8 +335,12 @@ function handleRoll(state: EngineState): EngineState {
   if (roll.isPair && canExitJail(next)) {
     next.turnPhase = 'SELECT_TOKEN';
   } else {
+    const dieA = roll.die2 > 0 ? roll.die1 - roll.die2 : roll.die1;
     const hasMoves = next.tokens.some(
-      (t) => t.color === color && (t.state === 'IN_TRANSIT' || t.state === 'IN_SKY') && validateMove(t, roll.die1, color, next),
+      (t) => t.color === color && (t.state === 'IN_TRANSIT' || t.state === 'IN_SKY') &&
+        (validateMove(t, roll.die1, color, next) ||
+         validateMove(t, dieA, color, next) ||
+         (roll.die2 > 0 && validateMove(t, roll.die2, color, next)))
     );
     next.turnPhase = hasMoves ? 'MOVE' : 'TURN_END';
   }

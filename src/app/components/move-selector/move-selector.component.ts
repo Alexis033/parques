@@ -1,17 +1,19 @@
 import { Component, input, output, computed, signal } from '@angular/core';
 import type { DiceRoll } from '@parchis/shared';
 import type { ValidAction, ValidMoveCombined, ValidMoveSplit, ValidExitOption, ValidSoplar, ValidSkip } from '@parchis/engine';
+import { computeDiceValues } from '../dice/dice-utils';
 
 @Component({
     selector: 'app-move-selector',
     imports: [],
     template: `
-    <div class="move-selector">
+      <div class="move-selector">
       <div class="ms-header">
         <h3>Select Move</h3>
         @if (currentRoll(); as roll) {
+          @let vals = diceValues();
           <span class="dice-info">
-            {{ roll.die1 }} + {{ roll.die2 }}
+            {{ vals[0] }} + {{ vals[1] }}
             @if (roll.isPair) { <span class="pair-tag">Pair</span> }
           </span>
         }
@@ -171,6 +173,10 @@ export class MoveSelectorComponent {
   cancelSelection = output<void>();
 
   protected selectedAction = signal<ValidAction | null>(null);
+
+  protected diceValues = computed<[number, number]>(() => {
+    return computeDiceValues(this.currentRoll());
+  });
 
   protected sortedActions = computed(() => {
     const order: Record<string, number> = {

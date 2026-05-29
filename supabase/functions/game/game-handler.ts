@@ -316,8 +316,13 @@ export function handleRoll(state: EngineState): EngineState {
   if (roll.isPair && canExitJail(next)) {
     next.turnPhase = 'SELECT_TOKEN';
   } else {
+    // Decode individual dice: die1 = combined sum, die2 = second die
+    const dieA = roll.die2 > 0 ? roll.die1 - roll.die2 : roll.die1;
     const hasMoves = next.tokens.some(
-      (t) => t.color === color && (t.state === 'IN_TRANSIT' || t.state === 'IN_SKY') && validateMove(t, roll.die1, color, next),
+      (t) => t.color === color && (t.state === 'IN_TRANSIT' || t.state === 'IN_SKY') &&
+        (validateMove(t, roll.die1, color, next) ||  // combined
+         validateMove(t, dieA, color, next) ||         // first individual die
+         (roll.die2 > 0 && validateMove(t, roll.die2, color, next)))  // second individual die
     );
     next.turnPhase = hasMoves ? 'MOVE' : 'TURN_END';
   }

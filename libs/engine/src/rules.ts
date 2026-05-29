@@ -98,23 +98,30 @@ export function getMoveActions(state: EngineState): ValidAction[] {
   );
   const actions: ValidAction[] = [];
 
+  // Decode dice values:
+  // Server encodes: die1 = combined sum, die2 = individual second die
+  // First individual die = die1 - die2 (when die2 > 0)
+  // In last-token mode: die1 = single die value, die2 = 0
+  const dieA = roll.die2 > 0 ? roll.die1 - roll.die2 : roll.die1;
+  const dieB = roll.die2;
+  const combinedTotal = roll.die1; // already the sum of both dice
+
   if (state.isLastTokenMode) {
     for (const token of activeTokens) {
-      const val = validateMove(token, roll.die1, color, state);
+      const val = validateMove(token, combinedTotal, color, state);
       if (val.valid) {
         actions.push({
           type: 'MOVE_COMBINED',
           tokenId: token.id,
-          squares: roll.die1,
-          description: `Move ${token.id} by ${roll.die1}`,
+          squares: combinedTotal,
+          description: `Move ${token.id} by ${combinedTotal}`,
         });
       }
     }
     return actions;
   }
 
-  const combinedTotal = roll.die1 + roll.die2;
-
+  // Combined move: move one token by the full sum
   for (const token of activeTokens) {
     const val = validateMove(token, combinedTotal, color, state);
     if (val.valid) {
@@ -127,47 +134,50 @@ export function getMoveActions(state: EngineState): ValidAction[] {
     }
   }
 
+  // Split move: one token by first individual die
   for (let i = 0; i < activeTokens.length; i++) {
-    const valA = validateMove(activeTokens[i], roll.die1, color, state);
+    const valA = validateMove(activeTokens[i], dieA, color, state);
     if (valA.valid) {
       actions.push({
         type: 'MOVE_SPLIT',
         tokenA: activeTokens[i].id,
-        squaresA: roll.die1,
+        squaresA: dieA,
         tokenB: '',
         squaresB: 0,
-        description: `Move ${activeTokens[i].id} by ${roll.die1}`,
+        description: `Move ${activeTokens[i].id} by ${dieA}`,
       });
     }
   }
 
+  // Split by second individual die (when not Pair, can be standalone)
   if (!roll.isPair) {
     for (let i = 0; i < activeTokens.length; i++) {
-      const valB = validateMove(activeTokens[i], roll.die2, color, state);
+      const valB = validateMove(activeTokens[i], dieB, color, state);
       if (valB.valid) {
         actions.push({
           type: 'MOVE_SPLIT',
           tokenA: activeTokens[i].id,
-          squaresA: roll.die2,
+          squaresA: dieB,
           tokenB: '',
           squaresB: 0,
-          description: `Move ${activeTokens[i].id} by ${roll.die2}`,
+          description: `Move ${activeTokens[i].id} by ${dieB}`,
         });
       }
     }
   } else {
+    // Pair: split between two different tokens
     for (let i = 0; i < activeTokens.length; i++) {
-      if (validateMove(activeTokens[i], roll.die1, color, state).valid) {
+      if (validateMove(activeTokens[i], dieA, color, state).valid) {
         for (let j = 0; j < activeTokens.length; j++) {
           if (i === j) continue;
-          if (validateMove(activeTokens[j], roll.die2, color, state).valid) {
+          if (validateMove(activeTokens[j], dieB, color, state).valid) {
             actions.push({
               type: 'MOVE_SPLIT',
               tokenA: activeTokens[i].id,
-              squaresA: roll.die1,
+              squaresA: dieA,
               tokenB: activeTokens[j].id,
-              squaresB: roll.die2,
-              description: `Split: ${activeTokens[i].id} by ${roll.die1}, ${activeTokens[j].id} by ${roll.die2}`,
+              squaresB: dieB,
+              description: `Split: ${activeTokens[i].id} by ${dieA}, ${activeTokens[j].id} by ${dieB}`,
             });
           }
         }
