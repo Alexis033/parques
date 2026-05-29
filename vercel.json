@@ -2,8 +2,6 @@
   "buildCommand": "pnpm build",
   "outputDirectory": "dist/parchis/browser",
   "rewrites": [
-    { "source": "/env-config.js", "destination": "/env-config.js" },
-    { "source": "/(.*\\.(js|css|map|ico|svg|png|jpg|webp|woff2?))", "destination": "/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
