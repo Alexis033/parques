@@ -1,4 +1,6 @@
 {
+  "buildCommand": "pnpm build",
+  "outputDirectory": "dist/parchis/browser",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
