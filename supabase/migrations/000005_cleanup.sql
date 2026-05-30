@@ -34,5 +34,6 @@ BEGIN
 END;
 $$;
 
--- 3. Schedule: every hour
+-- 3. Schedule: every hour (idempotent: unschedule first)
+SELECT cron.unschedule('cleanup-db');
 SELECT cron.schedule('cleanup-db', '0 * * * *', 'SELECT cleanup_expired_data()');
