@@ -8,4 +8,4 @@ policy = "per_worker"
 [functions.game]
 enabled = true
 verify_jwt = false
-import_map = "./deno.jsonc"
+import_map = "./functions/game/deno.jsonc"
