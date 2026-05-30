@@ -22,6 +22,12 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 interface GameActionPayload {
   action: string;
   gameId?: string;
@@ -403,4 +409,16 @@ async function handleRematchAction(payload: GameActionPayload): Promise<Response
   });
 }
 
-serve(handleRequest);
+serve((req: Request) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+  // Delegate to handler and add CORS headers to response
+  return handleRequest(req).then((res) => {
+    for (const [key, value] of Object.entries(CORS_HEADERS)) {
+      res.headers.set(key, value);
+    }
+    return res;
+  });
+});
