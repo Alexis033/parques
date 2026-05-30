@@ -47,3 +47,4 @@ src/env-config.js
 # System files
 .DS_Store
 Thumbs.db
+ng-serve-output*.txt

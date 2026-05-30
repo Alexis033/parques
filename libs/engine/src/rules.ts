@@ -238,9 +238,6 @@ export function getValidActions(state: EngineState): ValidAction[] {
     const soplarActions = getSoplarActions(state);
     actions.push(...moveActions);
     actions.push(...soplarActions);
-    if (moveActions.length === 0 && soplarActions.length === 0) {
-      actions.push({ type: 'SKIP', description: 'No valid moves, end turn' });
-    }
     return actions;
   }
 
@@ -249,7 +246,6 @@ export function getValidActions(state: EngineState): ValidAction[] {
   }
 
   if (state.turnPhase === 'TURN_END') {
-    actions.push({ type: 'SKIP', description: 'End turn' });
     return actions;
   }
 

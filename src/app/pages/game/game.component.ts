@@ -697,6 +697,15 @@ export class GameComponent implements OnInit, OnDestroy {
         }
       }
     }, { injector: this.injector });
+
+    // Auto-end-turn when server sends MOVE phase with no valid actions
+    effect(() => {
+      const state = this.engineStateC();
+      if (!state || !this.isMyTurn()) return;
+      if (state.turnPhase === 'MOVE' && this.validActions().length === 0) {
+        this.gameService.endTurn().catch(() => {});
+      }
+    }, { injector: this.injector });
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) {
       this.router.navigate(['/lobby']);
@@ -822,6 +831,12 @@ export class GameComponent implements OnInit, OnDestroy {
   async onRoll(): Promise<void> {
     try {
       await this.gameService.roll();
+      // If no valid moves after rolling, auto-end turn
+      if (this.validActions().length === 0) {
+        if (this.engineStateC()?.turnPhase === 'ROLL') return; // jail: wait for next roll
+        await this.gameService.endTurn();
+        return;
+      }
       this.showMoveSelector.set(true);
     } catch {
       // error handled by service
@@ -871,9 +886,6 @@ export class GameComponent implements OnInit, OnDestroy {
           await this.gameService.soplar(soplar.targetTokenId);
           break;
         }
-        case 'SKIP':
-          await this.gameService.endTurn();
-          break;
       }
     } catch (err) {
       console.error('Action failed', err);
