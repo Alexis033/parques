@@ -27,6 +27,7 @@ interface GameActionPayload {
   gameId?: string;
   roomId?: string;
   tokenId?: string;
+  playerId?: string;
   squares?: number;
   tokenA?: string;
   tokenB?: string;
