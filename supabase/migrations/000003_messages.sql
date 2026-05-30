@@ -18,7 +18,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at DESC);
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 
 -- RLS: anyone can read messages for their room
-CREATE POLICY "Anyone can read messages for their room"
+CREATE OR REPLACE POLICY "Anyone can read messages for their room"
   ON messages FOR SELECT
   USING (
     room_id IN (
@@ -27,7 +27,7 @@ CREATE POLICY "Anyone can read messages for their room"
   );
 
 -- RLS: authenticated users can insert messages in their room
-CREATE POLICY "Authenticated users can insert messages"
+CREATE OR REPLACE POLICY "Authenticated users can insert messages"
   ON messages FOR INSERT
   WITH CHECK (
     auth.role() = 'authenticated'
