@@ -3,8 +3,9 @@
  * Uses the correct rect order to match the Parqués circuit path.
  */
 import { readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
 
-const svg = readFileSync('tablero.svg', 'utf-8');
+const svg = readFileSync(join(import.meta.dirname, 'tablero.svg'), 'utf-8');
 
 // ---- Matrix helpers ----
 function identity() { return [1,0,0,1,0,0]; }

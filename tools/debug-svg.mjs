@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
-const svg = readFileSync('tablero.svg', 'utf-8');
+import { join } from 'path';
+const svg = readFileSync(join(import.meta.dirname, 'tablero.svg'), 'utf-8');
 
 // Find azul group content and count paths
 const match = svg.match(/<g[^>]*?id="azul"[^>]*?>([\s\S]*?)<\/g>/i);
