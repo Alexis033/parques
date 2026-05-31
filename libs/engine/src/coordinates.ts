@@ -1,4 +1,4 @@
-// Auto-generated from tablero.svg — DO NOT EDIT DIRECTLY
+// SVG-derived board position coordinates
 import type { BoardPosition, Coordinate } from '@parchis/shared';
 import { BOARD_SIZE, CIRCUIT_SIZE, CIELO_SIZE, JAIL_SIZE } from '@parchis/shared';
 
