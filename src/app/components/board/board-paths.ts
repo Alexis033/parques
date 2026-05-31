@@ -1,5 +1,5 @@
 /**
- * SVG track path data extracted from tablero.svg.
+ * SVG track path data extracted from the original board SVG.
  * All 4 player tracks share the same base paths, just rotated.
  * Base is the azul (RED track) group which has no rotation.
  */
